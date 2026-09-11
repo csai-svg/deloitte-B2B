@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Cart | Deloitte Merchandise Store</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<main class="wrap">
+  <div class="page-head"><h1>Your cart</h1></div>
+  <div id="body"></div>
+</main>
+
+<script src="assets/js/app.js"></script>
+<script>
+(async function () {
+  await Catalog.load();
+  mount();
+  paint();
+})();
+
+/* Units of a sized product that have not been given a size yet. A kit adds
+   apparel this way: the right quantity, split still to be decided. */
+function unassignedQty(lines) {
+  return lines.filter(l => !l.size).reduce((a, l) => a + l.qty, 0);
+}
+
+function needsSizes(r) {
+  return Object.values(r.groups).some(g =>
+    g.product.has_sizes && unassignedQty(r.lines.filter(l => l.sku === g.product.sku)));
+}
+
+/* Spread the unassigned units across the product's sizes. The group total
+   never changes, so the price band and the MOQ check stay put while the
+   requester decides the split. */
+function sizeSplitter(product, lines) {
+  const left = unassignedQty(lines);
+  const bySize = {};
+  lines.forEach(l => { if (l.size) bySize[l.size] = l.qty; });
+
+  const write = next => {
+    const total = lines.reduce((a, l) => a + l.qty, 0);
+    const assigned = Object.values(next).reduce((a, n) => a + n, 0);
+    if (assigned > total) return toast('That is more than the kit quantity', 'error');
+    const others = Cart.read().filter(i => i.sku !== product.sku);
+    const rows = Object.entries(next)
+      .filter(([, n]) => n > 0)
+      .map(([size, n]) => ({ key: product.sku + '_' + size, sku: product.sku, size, qty: n }));
+    if (total - assigned > 0) {
+      rows.push({ key: product.sku, sku: product.sku, size: '', qty: total - assigned });
+    }
+    Cart.write(others.concat(rows));
+    paint();
+  };
+
+  return el('div', { class: 'note note-warn', style: 'margin-top:12px' },
+    el('strong', {}, `${qty(left)} unit${left === 1 ? '' : 's'} still need a size.`),
+    ' Split them below. The total stays the same, so the price band does not move.',
+    el('div', { class: 'size-split' },
+      product.sizes.map(size => el('label', {},
+        el('span', {}, size),
+        el('input', {
+          type: 'number', min: '0', value: bySize[size] || 0,
+          onchange: e => {
+            const next = { ...bySize };
+            next[size] = Math.max(0, Math.floor(Number(e.target.value) || 0));
+            write(next);
+          },
+        })))),
+    el('button', {
+      class: 'btn btn-ghost btn-sm', style: 'margin-top:10px',
+      onclick: () => {
+        const total = lines.reduce((a, l) => a + l.qty, 0);
+        const sizes = product.sizes;
+        const base = Math.floor(total / sizes.length);
+        const next = {};
+        sizes.forEach((s, i) => { next[s] = base + (i < total % sizes.length ? 1 : 0); });
+        write(next);
+      },
+    }, 'Split evenly'));
+}
+
+function paint() {
+  const host = document.getElementById('body');
+  host.textContent = '';
+
+  const items = Cart.read();
+  if (!items.length) {
+    host.append(el('div', { class: 'empty' },
+      el('h2', {}, 'Your cart is empty'),
+      el('p', {}, 'Browse the catalogue to add products.'),
+      el('a', { class: 'btn', href: 'index.html' }, 'Browse catalogue')));
+    return;
+  }
+
+  const r = priceCart(items, s => Catalog.bySku(s));
+
+  // One block per parent SKU, so the rollup rule is visible rather than implied.
+  const blocks = Object.entries(r.groups).map(([sku, g]) => {
+    const lines = r.lines.filter(l => l.sku === sku);
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row-between', style: 'align-items:flex-start' },
+        el('div', { class: 'row', style: 'align-items:flex-start' },
+          el('img', { class: 'thumb', src: g.product.image, alt: '' }),
+          el('div', {},
+            el('div', { class: 'card-sku' }, sku),
+            el('a', { href: 'product.html?sku=' + encodeURIComponent(sku) },
+              el('strong', {}, g.product.name)),
+            el('div', { class: 'small muted' },
+              `${qty(g.groupQty)} units total · ${g.tier ? tierLabel(g.tier) + ' band' : 'below minimum'} · MOQ ${qty(g.product.moq)}`))),
+        el('div', { class: 'right' },
+          el('div', { class: 'mono', style: 'font-weight:800;font-size:1.1rem' }, money(g.unit)),
+          el('div', { class: 'small muted' }, 'per unit · GST ' + g.gst + '%'))),
+
+      el('table', { class: 'tbl', style: 'margin-top:14px' },
+        el('thead', {}, el('tr', {},
+          el('th', {}, g.product.has_sizes ? 'Size' : 'Item'),
+          el('th', { class: 'num' }, 'Qty'),
+          el('th', { class: 'num' }, 'Unit'),
+          el('th', { class: 'num' }, 'Line total'),
+          el('th', {}, ''))),
+        el('tbody', {}, lines.map(l => el('tr', {},
+          el('td', {}, el('strong', {},
+            l.size || (g.product.has_sizes ? 'Size not set' : 'Standard'))),
+          el('td', { class: 'num' },
+            el('input', {
+              type: 'number', min: '0', class: 'qty-in', value: l.qty,
+              onchange: e => { Cart.setQty(l.key, Math.floor(Number(e.target.value) || 0)); paint(); },
+            })),
+          el('td', { class: 'num mono' }, money(l.unit)),
+          el('td', { class: 'num mono' }, money(l.lineTotal)),
+          el('td', { class: 'right' },
+            el('button', {
+              class: 'btn btn-ghost btn-sm',
+              onclick: () => { Cart.remove(l.key); paint(); },
+            }, 'Remove')))))),
+
+      g.product.has_sizes && unassignedQty(lines)
+        ? sizeSplitter(g.product, lines)
+        : null,
+
+      !g.meetsMoq
+        ? el('div', { class: 'warn', style: 'margin-top:12px' },
+            el('strong', {}, 'Below the minimum order quantity. '),
+            `This product is normally ordered in ${qty(g.product.moq)}s` +
+            (g.product.has_sizes ? ', counted across all sizes' : '') +
+            `; you have ${qty(g.groupQty)}. Add ${qty(g.shortBy)} more to reach it, or carry on ` +
+            'and the approver will see the shortfall.')
+        : g.next
+          ? el('div', { class: 'note note-quiet', style: 'margin-top:12px' },
+              `Add ${qty(g.needForNext)} more to drop the unit price to ${money(g.next.unit_price)}.`)
+          : null);
+  });
+
+  host.append(
+    el('div', { class: 'stack' }, blocks),
+    el('div', { class: 'panel', style: 'margin-top:18px;max-width:420px;margin-left:auto' },
+      el('table', { class: 'totals' }, el('tbody', {},
+        el('tr', {}, el('td', {}, 'Subtotal'), el('td', {}, money(r.subtotal))),
+        el('tr', {}, el('td', {}, 'GST'), el('td', {}, money(r.taxTotal))),
+        el('tr', {}, el('td', {}, 'Shipping & handling'),
+          el('td', {}, money(r.shippingTotal))),
+        el('tr', { class: 'grand' }, el('td', {}, 'Total'), el('td', {}, money(r.grandTotal))))),
+      el('div', { class: 'small muted', style: 'margin:10px 0 14px' },
+        'Shipping and handling is charged at ' + r.shippingPct +
+        '% of the order value before GST.'),
+      r.belowMoq.length
+        ? el('div', { class: 'warn', style: 'margin-bottom:12px' },
+            r.belowMoq.length === 1
+              ? 'One product is under its minimum order quantity.'
+              : `${r.belowMoq.length} products are under their minimum order quantity.`)
+        : null,
+      needsSizes(r)
+        ? el('button', { class: 'btn btn-block', disabled: 'disabled' }, 'Assign sizes to continue')
+        : el('button', { class: 'btn btn-block', onclick: () => openRequestForm() }, 'Submit request'),
+      el('a', { class: 'btn btn-ghost btn-block', href: 'index.html', style: 'margin-top:8px' }, 'Continue shopping')));
+}
+
+/* View-only store: no checkout. The cart is submitted as a request that lands
+   in the Kit Requests tab for the ASMs. */
+function cartItemsPayload() {
+  return Cart.read().map(l => {
+    const p = Catalog.bySku(l.sku) || {};
+    return { sku: l.sku, name: p.name || l.sku, size: l.size || '', qty: l.qty };
+  });
+}
+
+function openRequestForm() {
+  const existing = document.getElementById('reqShade');
+  if (existing) existing.remove();
+
+  const msg = el('div', { class: 'small', style: 'min-height:18px;color:var(--brand)' });
+  const nameI = el('input', { type: 'text', required: 'required', placeholder: 'Your name' });
+  const emailI = el('input', { type: 'email', required: 'required', placeholder: 'name@company.com' });
+  const notesI = el('textarea', { placeholder: 'Anything the team should know — needed-by date, event, sizes, etc.', style: 'min-height:80px' });
+
+  const submit = el('button', { class: 'btn btn-block', type: 'submit' }, 'Send request');
+  const form = el('form', { class: 'panel', style: 'max-width:460px;width:100%',
+    onsubmit: async e => {
+      e.preventDefault();
+      if (!nameI.value.trim() || !emailI.value.trim()) { msg.textContent = 'Name and work email are required.'; return; }
+      submit.disabled = true; submit.textContent = 'Sending…'; msg.textContent = '';
+      const items = cartItemsPayload();
+      const body = JSON.stringify({ fn: 'kit_request', token: CONFIG.API_TOKEN, brand: CONFIG.BRAND,
+        name: nameI.value.trim(), email: emailI.value.trim(), notes: notesI.value.trim(), items });
+      try {
+        if (!CONFIG.API_URL) throw new Error('no endpoint');
+        const res = await fetch(CONFIG.API_URL, { method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body });
+        const ok = res.ok && (await res.json().catch(() => ({}))).ok !== false;
+        if (!ok) throw new Error('bad response');
+        Cart.clear();
+        shade.innerHTML = '';
+        shade.append(el('div', { class: 'panel', style: 'max-width:460px;width:100%;text-align:center' },
+          el('h2', {}, 'Request sent'),
+          el('p', { class: 'muted' }, 'Thanks, ' + nameI.value.trim().split(' ')[0] + '. Our team has your request and will follow up by email.'),
+          el('a', { class: 'btn btn-block', href: 'index.html' }, 'Back to the store')));
+      } catch (err) {
+        submit.disabled = false; submit.textContent = 'Send request';
+        msg.textContent = 'Could not send just now. Please try again, or email helpdesk@companystore.io.';
+      }
+    } },
+    el('div', { class: 'row-between', style: 'align-items:center;margin-bottom:6px' },
+      el('h2', { style: 'margin:0' }, 'Submit your request'),
+      el('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: () => shade.remove() }, 'Close')),
+    el('p', { class: 'small muted', style: 'margin-top:0' }, 'No payment — this sends your selected items to our team, who will get back to you.'),
+    el('label', { class: 'field full' }, el('span', {}, 'Name'), nameI),
+    el('label', { class: 'field full' }, el('span', {}, 'Work email'), emailI),
+    el('label', { class: 'field full' }, el('span', {}, 'Notes / needed-by date'), notesI),
+    msg, submit);
+
+  const shade = el('div', { class: 'menu-shade', id: 'reqShade',
+    style: 'display:flex;align-items:center;justify-content:center;padding:20px',
+    onclick: e => { if (e.target.id === 'reqShade') shade.remove(); } }, form);
+  document.body.append(shade);
+  nameI.focus();
+}
+</script>
+</body>
+</html>

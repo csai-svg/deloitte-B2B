@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>All products | Deloitte Merchandise Store</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<main class="wrap">
+  <div class="page-head">
+    <h1>All products</h1>
+    <div class="muted small">Search the whole catalogue, filter by price or minimum order quantity.</div>
+  </div>
+  <div id="bar"></div>
+  <div class="fbar-count" id="count"></div>
+  <div class="grid" id="grid"></div>
+  <div class="empty hidden" id="empty"><h2>Nothing matches</h2><p>Try a different search or clear the filters.</p></div>
+</main>
+
+<script src="assets/js/app.js"></script>
+<script>
+(async function () {
+  await Catalog.load();
+  mount('All');
+
+  // a search term in the URL, so a filtered view can be linked or bookmarked
+  Filters.reset();
+  Filters.state.q = param('q');
+  Filters.state.cat = param('cat');
+
+  const cats = [...new Set(Catalog.products.map(p => p.category))].sort();
+  Filters.bar(document.getElementById('bar'), { categories: cats }, paint);
+  paint();
+})();
+
+function paint() {
+  const list = Filters.apply(Catalog.products);
+  const grid = document.getElementById('grid');
+  grid.textContent = '';
+  document.getElementById('count').textContent =
+    `${qty(list.length)} of ${qty(Catalog.products.length)} products`;
+  document.getElementById('empty').classList.toggle('hidden', list.length > 0);
+  list.forEach(p => grid.append(productCard(p)));
+  Track.search(Filters.state.q, list.length);
+}
+</script>
+</body>
+</html>

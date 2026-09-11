@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Product | Deloitte Merchandise Store</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css">
+<style>
+  /* Colour swatches. Each colour is its own SKU, so a swatch is a link to
+     that product rather than an in-page toggle — the URL, and anything the
+     buyer copies out of it, always names the exact SKU being ordered. */
+  .swatch-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+  .swatch {
+    width: 34px; height: 34px; border-radius: 50%; display: block;
+    border: 1px solid rgba(0,0,0,.22); box-shadow: 0 0 0 2px #fff inset;
+    transition: .15s;
+  }
+  .swatch-link { text-decoration: none; text-align: center; }
+  .swatch-link:hover .swatch { transform: translateY(-2px); }
+  .swatch-link.on .swatch { box-shadow: 0 0 0 2px #fff inset, 0 0 0 2px var(--brand); }
+  .swatch-name { display: block; font-size: .72rem; margin-top: 4px; color: var(--muted); }
+  .swatch-link.on .swatch-name { color: var(--ink); font-weight: 700; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="crumbs" id="crumbs"></div>
+  <div class="pdp" id="pdp"></div>
+</main>
+
+<script src="assets/js/app.js"></script>
+<script>
+let P = null;
+
+(async function () {
+  await Catalog.load();
+  P = Catalog.bySku(param('sku'));
+  mount(P ? P.category : null);
+
+  if (!P) {
+    document.getElementById('pdp').append(
+      el('div', { class: 'empty' }, el('h2', {}, 'Product not found')));
+    return;
+  }
+
+  document.title = P.name + ' | Deloitte Merchandise Store';
+  document.getElementById('crumbs').append(
+    el('a', { href: 'index.html' }, 'Home'), ' / ',
+    el('a', { href: 'category.html?cat=' + encodeURIComponent(P.category) }, P.category), ' / ',
+    el('a', { href: 'category.html?cat=' + encodeURIComponent(P.category) + '&sub=' + encodeURIComponent(P.subcategory) }, P.subcategory));
+
+  document.getElementById('pdp').append(
+    el('div', { class: 'pdp-img' }, el('img', { src: P.image, alt: P.name })),
+    el('div', {}, buyPanel()));
+
+  paint();
+  paintRelated();
+  Track.event('product_view', { sku: P.sku });
+})();
+
+/* Curated in the admin console, per product, and mutual: if this product
+   points at another, that one points back. Skips anything that has since been
+   hidden, because related lists go stale otherwise. */
+/* Sibling colours of this style, if it has any. Rendered as links because
+   each colour is a distinct SKU with its own price, MOQ and stock. */
+function colourPicker() {
+  const cw = P.colorway;
+  if (!cw || cw.siblings.length < 2) return null;
+  return el('div', {},
+    el('h3', {}, 'Colour'),
+    el('div', { class: 'swatch-row' }, cw.siblings.map(s =>
+      el('a', {
+        class: 'swatch-link' + (s.sku === P.sku ? ' on' : ''),
+        href: 'product.html?sku=' + encodeURIComponent(s.sku),
+        title: s.color + ' — ' + s.sku,
+        'aria-current': s.sku === P.sku ? 'true' : null,
+      },
+        el('span', { class: 'swatch', style: 'background:' + s.swatch }),
+        el('span', { class: 'swatch-name' }, s.color)))));
+}
+
+function paintRelated() {
+  const skus = (P.related || []).filter(s => Catalog.bySku(s));
+  if (!skus.length) return;
+  document.querySelector('main').append(
+    el('div', { style: 'margin:44px 0 0' },
+      el('h2', {}, 'You may also be interested in this'),
+      el('div', { class: 'grid', style: 'margin-top:16px' },
+        skus.map(s => productCard(Catalog.bySku(s))))));
+}
+
+function buyPanel() {
+  const inCart = Cart.read().filter(i => i.sku === P.sku);
+  const start = {};
+  for (const i of inCart) start[i.size || '_'] = i.qty;
+
+  return el('div', { class: 'stack' },
+    el('div', {},
+      el('div', { class: 'card-sku' }, P.sku),
+      el('h1', {}, P.name)),
+
+    colourPicker(),
+
+    P.description ? el('p', { class: 'muted', style: 'white-space:pre-line' }, P.description) : null,
+
+    (P.specs || []).length ? el('table', { class: 'spec-table' },
+      el('tbody', {}, P.specs.map(([k, v]) => el('tr', {}, el('td', {}, k), el('td', {}, v))))) : null,
+
+
+    hasPrice(P) ? el('div', {},
+      el('h3', {}, 'Volume pricing'),
+      el('div', { class: 'small muted' },
+        P.has_sizes
+          ? 'Quantity is totalled across all sizes of this product before the price break is applied.'
+          : 'The price break is applied to the total quantity of this product.'),
+      el('table', { class: 'tier-table', id: 'tiers' },
+        el('thead', {}, el('tr', {},
+          el('th', {}, 'Quantity'), el('th', {}, 'Unit price'), el('th', {}, 'GST'))),
+        el('tbody', {}, P.tiers.map(t => el('tr', { 'data-min': t.min_qty },
+          el('td', {}, tierLabel(t)),
+          el('td', { class: 'mono' }, money(t.unit_price)),
+          el('td', { class: 'muted' }, tierGst(t, P) + '%'))))))
+      : null,
+
+    hasPrice(P) ? el('div', { class: 'note' },
+      el('strong', {}, 'Minimum order quantity: ' + qty(P.moq)),
+      P.has_sizes ? ' across all sizes combined.' : '.') : null,
+
+    hasPrice(P) ? (P.has_sizes ? el('div', {},
+      el('h3', {}, 'Quantity by size'),
+      el('div', { class: 'size-grid' }, P.sizes.map(s =>
+        el('div', { class: 'size-box', 'data-size': s },
+          el('label', {}, s),
+          el('input', {
+            type: 'number', min: '0', step: '1', value: start[s] || 0,
+            'data-size-input': s, oninput: paint,
+          }))))
+    ) : el('label', { class: 'field', style: 'max-width:180px' },
+      el('span', {}, 'Quantity'),
+      el('input', {
+        type: 'number', min: '0', step: '1', value: start['_'] || P.moq,
+        'data-size-input': '', oninput: paint,
+      }))) : null,
+
+    el('div', { class: 'panel', style: 'padding:16px' },
+      el('div', { class: 'row-between' },
+        el('span', { class: 'muted small' }, 'Total quantity'),
+        el('strong', { id: 'sumQty', class: 'mono' }, '0')),
+      el('div', { class: 'row-between' },
+        el('span', { class: 'muted small' }, 'Unit price'),
+        el('strong', { id: 'sumUnit', class: 'mono' }, '—')),
+      el('div', { class: 'row-between' },
+        el('span', { class: 'muted small' }, 'Line value, before GST'),
+        el('strong', { id: 'sumVal', class: 'mono' }, '—')),
+      el('div', { id: 'hint', class: 'small', style: 'margin-top:8px' })),
+
+    hasPrice(P)
+      ? el('button', { class: 'btn btn-block', id: 'addBtn', onclick: addToCart }, 'Add to cart')
+      : el('a', { class: 'btn btn-block', href: 'mailto:?subject=' +
+            encodeURIComponent('Price request: ' + P.name + ' (' + P.sku + ')') },
+          'Request a price'));
+}
+
+function readQtys() {
+  const out = [];
+  document.querySelectorAll('[data-size-input]').forEach(inp => {
+    const n = Math.max(0, Math.floor(Number(inp.value) || 0));
+    if (n > 0) out.push({ size: inp.getAttribute('data-size-input'), qty: n });
+  });
+  return out;
+}
+
+function paint() {
+  if (!hasPrice(P)) return;          // no tier table or totals to paint
+  const entries = readQtys();
+  const total = entries.reduce((a, e) => a + e.qty, 0);
+  const tier = pickTier(P.tiers, total);
+  const next = nextTier(P.tiers, total);
+  const unit = tier ? tier.unit_price : P.base_price;
+
+  document.getElementById('sumQty').textContent = qty(total);
+  document.getElementById('sumUnit').textContent = total ? money(unit) : '—';
+  document.getElementById('sumVal').textContent = total ? money(unit * total) : '—';
+
+  document.querySelectorAll('#tiers tbody tr').forEach(tr => {
+    tr.classList.toggle('on', !!tier && Number(tr.getAttribute('data-min')) === tier.min_qty);
+  });
+  document.querySelectorAll('.size-box').forEach(b => {
+    const inp = b.querySelector('input');
+    b.classList.toggle('has', Number(inp.value) > 0);
+  });
+
+  const hint = document.getElementById('hint');
+  const btn = document.getElementById('addBtn');
+  hint.className = 'small';
+
+  if (total === 0) {
+    hint.textContent = 'Enter a quantity to continue.';
+    hint.classList.add('muted');
+    btn.disabled = true;
+  } else if (total < P.moq) {
+    /* Under the MOQ is allowed, and flagged rather than blocked. */
+    hint.className = 'warn small';
+    hint.innerHTML = `<strong>Below the minimum order quantity.</strong> This product is normally ` +
+      `ordered in ${qty(P.moq)}s; you have ${qty(total)}. The order can still be raised, and the ` +
+      `approver will see the shortfall.`;
+    btn.disabled = false;
+  } else if (next) {
+    hint.innerHTML = `Add <strong>${qty(next.min_qty - total)}</strong> more to reach ${money(next.unit_price)} each.`;
+    hint.classList.add('muted');
+    btn.disabled = false;
+  } else {
+    hint.textContent = 'Best available price applied.';
+    hint.classList.add('muted');
+    btn.disabled = false;
+  }
+}
+
+function addToCart() {
+  if (!hasPrice(P)) return;          // belt and braces: the button is not rendered
+  const entries = readQtys();
+  const total = entries.reduce((a, e) => a + e.qty, 0);
+  if (total === 0) return;
+
+  // Replace this product's existing lines rather than stacking onto them, so
+  // the page always reflects exactly what the inputs show.
+  Cart.write([
+    ...Cart.read().filter(i => i.sku !== P.sku),
+    ...entries.map(e => ({
+      key: e.size ? P.sku + '_' + e.size : P.sku,
+      sku: P.sku, size: e.size, qty: e.qty,
+    })),
+  ]);
+  Track.event('add_to_cart', { sku: P.sku, qty: total, value: total * unitAt(P, total) });
+  toast(`${qty(total)} × ${P.name} in cart`);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Build a kit | Deloitte Merchandise Store</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<main class="wrap">
+  <div class="page-head">
+    <h1>Build a kit</h1>
+    <p class="muted">Choose a ready-made gift box, or add any products to your cart to assemble your own. When you’re done, submit the cart as a request and our team takes it from there — no payment, no sign-in.</p>
+  </div>
+
+  <section class="home-sec">
+    <h2>Ready-made gift boxes</h2>
+    <div class="grid grid-5" id="kits"></div>
+  </section>
+
+  <section class="home-sec">
+    <div class="panel" style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between">
+      <div>
+        <h2 style="margin:0 0 4px">Build your own kit</h2>
+        <p class="muted" style="margin:0">Browse the catalogue, add the items you want to your cart, then submit it as one request.</p>
+      </div>
+      <div class="row" style="gap:10px">
+        <a class="btn" href="all.html">Browse all products</a>
+        <a class="btn btn-ghost" href="cart.html">View cart</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="assets/js/app.js"></script>
+<script>
+(async function () {
+  await Catalog.load();
+  mount('Kit');
+  const boxes = Catalog.allProducts.filter(p => p.category === 'Gift Box');
+  const host = document.getElementById('kits');
+  if (!boxes.length) {
+    host.replaceWith(el('p', { class: 'muted' }, 'Gift boxes are being added — check back soon.'));
+  } else {
+    host.append(...boxes.map(productCard));
+  }
+})();
+</script>
+</body>
+</html>

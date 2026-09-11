@@ -1,0 +1,39 @@
+{
+  "_note": "Colourway groups. Several products in the catalogue are the same style in different colours but were exported as separate SKUs with identical names, so they showed up as duplicate listings. Each group collapses to ONE card in listings (the `primary`); the product page shows swatches that switch between the members. Each colour keeps its own SKU, price, MOQ and stock — nothing about ordering changes. Colours were read off the product photography on 2026-09-04 and confirmed by the user. Add a group here rather than editing the sheet: this file survives an Apps Script republish of products.json.",
+  "groups": [
+    {
+      "id": "beanie-cap",
+      "label": "Beanie Cap",
+      "primary": "CSUN-3478",
+      "members": [
+        { "sku": "CSUN-3478", "color": "Oatmeal",  "swatch": "#E7DFD1" },
+        { "sku": "CSUN-0698", "color": "Charcoal", "swatch": "#3F4246" }
+      ]
+    },
+    {
+      "id": "custom-full-color-lanyard",
+      "label": "Custom Full Color Lanyard",
+      "primary": "CSUN-0306",
+      "members": [
+        { "sku": "CSUN-0306", "color": "Black",  "swatch": "#1C1C1E" },
+        { "sku": "CSUN-3417", "color": "White",  "swatch": "#F4F4F5" },
+        { "sku": "CSUN-3584", "color": "Yellow", "swatch": "#E9B321" }
+      ]
+    },
+    {
+      "id": "et-tu-no-zip-hoodie",
+      "label": "ET-TU Unisex Recycled No Zip Hoodie",
+      "primary": "CSUN-1538",
+      "members": [
+        { "sku": "CSUN-1538", "color": "Black", "swatch": "#1C1C1E" },
+        {
+          "sku": "CSUN-3440",
+          "color": "",
+          "swatch": "",
+          "needs_image": true,
+          "note": "Named '- Black' but the attached photo is cream. User confirmed the NAME is right and the PHOTO is wrong. Held out of listings and given no swatch until a correct image lands; then set its colour here (or fold it into CSUN-1538 if it is a true duplicate)."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Catalogue | Deloitte Merchandise Store</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<main class="wrap">
+  <div class="crumbs"><a href="index.html">Home</a> / <span id="crumb"></span></div>
+  <div class="page-head">
+    <h1 id="title"></h1>
+    <div class="muted small" id="count"></div>
+  </div>
+  <div class="filters" id="filters"></div>
+  <div id="bar"></div>
+  <div class="grid" id="grid"></div>
+  <div class="empty hidden" id="empty"><h2>Nothing here</h2><p>No products in this filter.</p></div>
+</main>
+
+<script src="assets/js/app.js"></script>
+<script>
+(async function () {
+  await Catalog.load();
+  const cat = param('cat') || Catalog.categories[0].slug;
+  mount(cat);
+
+  const meta = Catalog.categories.find(c => c.slug === cat);
+  if (!meta) { document.getElementById('title').textContent = 'Unknown category'; return; }
+
+  document.getElementById('crumb').textContent = meta.label;
+  document.getElementById('title').textContent = meta.label;
+  document.title = meta.label + ' | Deloitte Merchandise Store';
+
+  const all = Catalog.products.filter(p => p.category === cat);
+  let sub = param('sub');
+
+  const filters = document.getElementById('filters');
+  filters.append(chip('All', !sub, () => go('')));
+  for (const s of meta.subcategories) {
+    filters.append(chip(s, sub === s, () => go(s)));
+  }
+
+  function go(s) {
+    location.href = 'category.html?cat=' + encodeURIComponent(cat) + (s ? '&sub=' + encodeURIComponent(s) : '');
+  }
+
+  // the subcategory chips stay in the URL; the bar filters within them
+  Filters.reset();
+  Filters.state.cat = cat;
+  Filters.state.sub = sub || '';
+  Filters.bar(document.getElementById('bar'), { keepCategory: true }, paint);
+  paint();
+
+  function paint() {
+    const shown = Filters.apply(Catalog.products);
+    document.getElementById('count').textContent =
+      `${shown.length} of ${all.length} product${all.length === 1 ? '' : 's'}` +
+      (sub ? ` in ${sub}` : '');
+    document.getElementById('empty').classList.toggle('hidden', shown.length > 0);
+    const grid = document.getElementById('grid');
+    grid.textContent = '';
+    grid.append(...shown.map(productCard));
+    Track.search(Filters.state.q, shown.length);
+  }
+})();
+
+function chip(label, on, fn) {
+  return el('button', { class: 'chip' + (on ? ' on' : ''), onclick: fn }, label);
+}
+</script>
+</body>
+</html>

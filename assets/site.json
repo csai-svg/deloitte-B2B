@@ -1,0 +1,18 @@
+{
+  "settings": {
+    "site_name": "Deloitte Merchandise Store",
+    "logo_url": "assets/brand/logo.png",
+    "logo_white_url": "assets/brand/logo-white.png",
+    "hero_title": "Deloitte branded merchandise",
+    "hero_subtitle": "Browse the catalogue and build a request — no sign-in needed."
+  },
+  "banners": [
+    {
+      "title": "Deloitte branded merchandise",
+      "subtitle": "Apparel, drinkware, travel and more",
+      "image_url": "assets/brand/hero-deloitte.png",
+      "link_url": "all.html"
+    }
+  ],
+  "departments": []
+}

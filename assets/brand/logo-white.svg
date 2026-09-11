@@ -1,0 +1,7 @@
+<svg width="176" height="32" viewBox="0 0 176 32" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="CompanyStore">
+  <rect x="0" y="0" width="32" height="32" rx="8" fill="#3401FF"/>
+  <rect x="7" y="17" width="5.5" height="9" rx="1.6" fill="#fff"/>
+  <rect x="13.5" y="12" width="5.5" height="14" rx="1.6" fill="#fff" fill-opacity=".92"/>
+  <rect x="20" y="6" width="5.5" height="20" rx="1.6" fill="#fff" fill-opacity=".82"/>
+  <text x="42" y="22" font-family="Sora, Manrope, sans-serif" font-size="17" font-weight="700" letter-spacing="-0.3" fill="#fff">CompanyStore</text>
+</svg>

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Deloitte Merchandise Store</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<main>
+  <section id="hero"></section>
+
+  <div class="wrap">
+    <div id="banners"></div>
+
+    <section class="home-sec">
+      <h2>Shop the category</h2>
+      <div class="cat-tiles" id="cats"></div>
+    </section>
+
+    <section class="home-sec">
+      <div class="row-between" style="margin-bottom:22px">
+        <h2 style="margin:0">Featured products</h2>
+        <a class="link-quiet" href="all.html">View all</a>
+      </div>
+      <div class="grid grid-5" id="featured"></div>
+    </section>
+  </div>
+</main>
+
+<script src="assets/js/app.js"></script>
+<script>
+(async function () {
+  await Catalog.load();
+  mount();
+  paintHero();
+  paintBanners();
+
+  const counts = {};
+  for (const p of Catalog.products) counts[p.category] = (counts[p.category] || 0) + 1;
+
+  /* Each category is shown by its dearest product, which is reliably the one
+     photographed well enough to carry a tile. */
+  document.getElementById('cats').append(...Catalog.categories.map(c => {
+    const rep = Catalog.products
+      .filter(p => p.category === c.slug)
+      .sort((a, b) => b.base_price - a.base_price)[0];
+    return el('a', { class: 'cat-tile', href: 'category.html?cat=' + encodeURIComponent(c.slug) },
+      el('div', { class: 'cat-tile-img' },
+        rep ? el('img', { src: rep.image, alt: '', loading: 'lazy' }) : null),
+      el('div', { class: 'cat-tile-label' }, c.label),
+      el('div', { class: 'small muted' }, `${counts[c.slug] || 0} products`));
+  }));
+
+  // One representative product per subcategory, dearest first, capped at 10.
+  const seen = new Set(), picks = [];
+  for (const p of [...Catalog.products].sort((a, b) => b.base_price - a.base_price)) {
+    if (seen.has(p.subcategory)) continue;
+    seen.add(p.subcategory);
+    picks.push(p);
+    if (picks.length === 10) break;
+  }
+  document.getElementById('featured').append(...picks.map(productCard));
+})();
+
+/* First active banner is the hero. Falls back to the settings copy, then to
+   hard-coded text, so the page never renders empty. */
+function paintHero() {
+  const b = Site.banners[0];
+  const host = document.getElementById('hero');
+
+  /* Banner artwork carries its own headline, body copy and logo, so it is
+     shown whole rather than darkened into a backdrop for a second set of the
+     same words. Several banners with artwork become a carousel; one is just a
+     picture. Without artwork the page still needs the typeset hero below. */
+  const art = Site.banners.filter(x => x.image_url);
+  if (art.length) {
+    host.className = 'hero-art';
+    const slides = art.map((s, i) => {
+      const img = el('img', { src: s.image_url, alt: s.title || 'Deloitte Merchandise Store',
+        loading: i ? 'lazy' : 'eager' });
+      const slide = s.link_url
+        ? el('a', { class: 'hero-slide' + (i ? '' : ' on'), href: s.link_url }, img)
+        : el('div', { class: 'hero-slide' + (i ? '' : ' on') }, img);
+      host.append(slide);
+      return slide;
+    });
+
+    if (art.length > 1) {
+      let at = 0;
+      const dots = art.map((s, i) => el('button', {
+        class: 'hero-dot' + (i ? '' : ' on'), type: 'button',
+        'aria-label': 'Banner ' + (i + 1), onclick: () => show(i),
+      }));
+      const show = i => {
+        at = i;
+        slides.forEach((sl, n) => sl.classList.toggle('on', n === i));
+        dots.forEach((d, n) => d.classList.toggle('on', n === i));
+      };
+      host.append(el('div', { class: 'hero-dots' }, dots));
+      setInterval(() => show((at + 1) % art.length), 6000);
+    }
+    return;
+  }
+
+  host.className = 'hero';
+  host.append(el('div', { class: 'wrap' },
+    el('img', { class: 'hero-logo', alt: 'SecondHQ',
+      src: Site.get('logo_white_url', 'assets/brand/logo-white.png') }),
+    el('h1', {}, (b && b.title) || Site.get('hero_title', 'CompanyStore branded merchandise')),
+    el('p', {}, (b && b.subtitle) || Site.get('hero_subtitle',
+      'Browse the approved catalogue. Sign in at checkout to raise an order for approval.')),
+    b && b.link_url
+      ? el('a', { class: 'btn', href: b.link_url, style: 'margin-top:18px' }, 'Browse')
+      : null));
+}
+
+/* Any banners after the first render as a promo row. */
+function paintBanners() {
+  const rest = Site.banners.slice(1);
+  const host = document.getElementById('banners');
+  if (!rest.length) return;
+  host.className = 'promo-grid';
+  host.append(...rest.map(b => el('a', {
+    class: 'promo', href: b.link_url || '#',
+    style: b.image_url ? `background-image:linear-gradient(rgba(0,21,61,.55),rgba(0,21,61,.55)),url(${b.image_url})` : '',
+  }, el('div', {}, el('h3', {}, b.title || ''), el('p', { class: 'small' }, b.subtitle || '')))));
+}
+</script>
+</body>
+</html>

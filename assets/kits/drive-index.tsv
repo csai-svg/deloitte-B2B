@@ -1,0 +1,56 @@
+# Google Drive folder 1ox803NP73FVxxPTScm0DbB41sZPetc4T (catalogue@companystore.io)
+# Listing refreshed 2026-09-04 (second pass). Format: <fileId>\t<filename>
+# Files whose name matches a kit prefix (see tools/build_kit_media.py) become kit
+# imagery. Files named after a product are PRODUCT photography — build_kit_media.py
+# reports those as unmapped, which is expected.
+14zsbFtNb5W5mYSn6SLanrFhs3KF-WKxJ	New-Joinee-Kit-1.jpg
+1DmH1i7YEwAQ4a4D17J2dP1Sa5WYBy6kK	New-Joinee-Kit-2.jpg
+10Ht3sRA8LGIfNyJUooRunvCcleS0_owk	New-Joinee-Kit-3.jpg
+1AafxSJ_-jbBgbAoRTpjPz-Rm8K1pa4Jx	New-Joinee-Kit-4.jpg
+1_wkfF1ZUIzGglPusKLKTVpfZZcJ5bW2c	New-Joinee-Kit-5.jpg
+1horFiD_fjtTReDNoUEV6R6IvqS1Fode9	New-Joinee-Kit-6.jpg
+1eCBDQOy0FNY8h3n7sAxVN453RaH6Qojd	New-Joinee-Kit-7.jpg
+1w4OqNq0cgTLtU8vvUo6OjE6ITx-MCeGV	New-Joinee-Kit-8.jpg
+1KiZzCqUFeKjNopyWMbbkQU3PDEFk-02P	NJ-2.jpg
+1YgdwOho_7bIw0L6NzkGL-xJcA7Ul7rZX	Employee-Recognition-&-Rewards-1.jpg
+1rdoZDU0n2mVzDIgDGgIlP6bF8YdtQbmj	Employee-Recognition-&-Rewards-2.jpg
+1e2gfo0Jh1QmSWKxKIowzWamiNp5UEshl	Employee-Recognition-&-Rewards-3.jpg
+1AEmJfM7W4hW6s-HRH2-ZrIlOYBFLv0xW	Employee-Recognition-&-Rewards-4.jpg
+1El8UdvYWcG-fF-oHd3TXg4ovHFiQdD5t	ERR-1.jpg
+17Dt_LFqYMUP4_VFV8lXeyg5hCkYLo1p_	ERR-2.jpg
+1M1OTvx946-vtfEAN7Ydc3T6-UphYVVxS	ERR-5.jpg
+1-9Jm_4HqKZTLpaZaIr-UykN_YQukyCQN	ERR-7.jpg
+1KDcL7sPpO16NzPBWCdtaq4vdwbRUESeL	ERR-8.jpg
+10r4qhS-FSyolxDmdIcQXYzfS0lLFCN9X	ERR-11.jpg
+1iFOzg14dzrW2SIC_O8YtMg1kCKoOhzlu	New-Mom-&-Baby-kit-1.jpg
+1mS6BTyOo1skdZriG88GlYORVN_Xcaac1	New-Mom-&-Baby-kit-2.jpg
+1RSzKKkKKUkUP8Zh47q4Vi6QdLFL-EBfM	New-Mom-&-Baby-kit-3.jpg
+1vfXugq1N2zoXIfqxjEhNLVogrFHR-wCU	New-Mom-&-Baby-kit-4.jpg
+# LOCAL OVERRIDE: this file is still called "Digital Thermometer" in Drive, but the
+# user asked for it back in the New Mom kit. Rename it in Drive to
+# New-Mom-&-Baby-kit-5.jpg so the folder and this index agree.
+1S_H-96m0z1t67suaxsedbA-BcbWnTX41	New-Mom-&-Baby-kit-5.jpg
+12dzD70v27OS44BPTjQzy5UuKakOEUhap	Sustainable-1.jpg
+1AwDDmAZOBbDlI5kHHslAu5dO_96d9NFR	Sustainable-2.jpg
+15GBXL9SRPmAdxaV20dre-8dw0VNnB8Jb	Sustainable-3.jpg
+1MWaCoOzfNqFeT3CFwl8Dpc1d6ki92gRd	Sustainable-4.jpg
+1kdmy0YjWdXJ9oJtDLMaEWt3awfWVRFkj	FG-3.jpg
+1ckiEZUa88O5130jPXjVs8ZXcgU50Gh7u	FG-5.jpg
+1gYCXLLKiy97_lwwRGTjMDM67-cp899ID	FG-6.jpg
+1LmSeMD-KeoGFqTP1jMahbf1dvBQ2AEgd	FG-10.jpg
+18vx_fXKzXNOVp3b0a1ObMXcB3WE6t27M	FG-11.jpg
+1x-dantQBFO--mWdbH99OnxWYdqm1S5kv	FG-15.jpg
+1NDBCEso1u4ECZ_kH69oZZeRHNHiPymzf	FG-16.jpg
+15hFIHAaVQUhKiSUiJgWLYI2QEuQpY5X9	Personal-Milestone-1.jpg
+1FIT-nwYB1HhlT0gbHFkV0jIH2d3HvUqG	Personal-Milestone-2.jpg
+11LeZXnAubRkNnea96TLLzqFo7mpGpaXl	Personal-Milestone-3.jpg
+1BzqZ3OMf5339tDxUbI-SnlwnHNYaYhOh	Personal-Milestone-4.jpg
+15oGCc_inZ6F_KrRrQbpRCc3RLwVroPwG	PM-1.jpg
+11y8RueGNN5mLBP-gFVGpu6vT9Jt60aNj	PM-3.jpg
+# --- product photography (renamed by the user, not kit imagery) ---
+1vCCuDUNdIUIyMsnbqiI92ba3sCZGrrMp	Himalayan Intimate Wipes
+1G8k7vluU6aEljnp8ZpzEi-DzxF9Qz0RF	Tesla Classic Ball Pen
+1Nqx2YomGtrXfEzZcaZITJqSatJ9YVIXK	Capri R-Pet Premium Notebooks
+1Kswy5-NZU879cXF-5WnS3hRkmOXEKA1T	SOIL Camp Shirt
+1VSCvmC8RvCcg2Z0ZklBxy8zRwBok5FaM	Smoor Cookies
+1iriSvfdOfPPz2W34IggcmPT3gXmZedAT	Smoor Nougat Bar

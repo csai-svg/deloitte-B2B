@@ -1,0 +1,49 @@
+{
+  "note": "CompanyStore India delivery centres. Source: CompanyStore Address List.xlsx, 29 Jan 2026. Legal entity renamed from CompanyStore Delivery Center (India) Private Limited.",
+  "offices": [
+    {
+      "id": "gurugram",
+      "label": "Gurugram - HQ27, The Headquarters",
+      "contact_name": "Preeti Lakesh",
+      "contact_phone": "9205444962",
+      "street": "CompanyStore US Integrated Services India Private Limited, 9th & 10th Floor, B-660, HQ27 - The Headquarters, Sector 27, Sushant Lok Phase 1",
+      "city": "Gurugram",
+      "state": "Haryana",
+      "pincode": "122009",
+      "note": ""
+    },
+    {
+      "id": "hyderabad",
+      "label": "Hyderabad - Phoenix Equinox, Gachibowli",
+      "contact_name": "Uday Reddy",
+      "contact_phone": "9494232802",
+      "street": "CompanyStore US Integrated Services India Private Limited, Floor 10, SY No. 53 Paiki, Equinox Tower 1, Gachibowli, Serilingampally",
+      "city": "Hyderabad",
+      "state": "Telangana",
+      "pincode": "500032",
+      "note": "Alternate contact: CompanyStore Shift, 9205444963."
+    },
+    {
+      "id": "bengaluru",
+      "label": "Bengaluru - Embassy Manyata Business Park",
+      "contact_name": "Roopa",
+      "contact_phone": "8296043487",
+      "street": "CompanyStore US Integrated Services India Private Limited, 3rd Floor, Survey No. 81/8 P, 83/3A, 83/4, 116/6 and 117/1, Embassy Manyata Business Park, Rosewood Block J Wing B, Kasaba Hobli, Bangalore North Taluk, Nagavara Village",
+      "city": "Bengaluru",
+      "state": "Karnataka",
+      "pincode": "560045",
+      "note": ""
+    },
+    {
+      "id": "new-town",
+      "label": "Kolkata - Candor Techspace, New Town",
+      "contact_name": "Kunal Paul",
+      "contact_phone": "9205444964",
+      "street": "CompanyStore US Integrated Services India Private Limited, 6th Floor, Plot no. DH/1,2,3,3/1, Tower B1, Candor Techspace, Near Major Arterial Road, Rajarhat",
+      "city": "New Town",
+      "state": "West Bengal",
+      "pincode": "700156",
+      "note": "District: North Twenty Four Parganas."
+    }
+  ]
+}
