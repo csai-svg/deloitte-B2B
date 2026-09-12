@@ -7,8 +7,8 @@ const CONFIG = {
   // the live catalogue (GET ?fn=catalog) and receives cart submissions (POST).
   // Empty until deployed: the site then loads the bundled snapshot below and
   // shows a friendly notice if someone submits a request.
-  FEED_URL: 'https://script.google.com/macros/s/AKfycbzVTDZQNd4gu5CZzSyvDgUw2CbMOuntBF8-NY55fvJnt4rrO_oi_t1ZCjQ3fShIF4j2Cg/exec',
-  API_URL: 'https://script.google.com/macros/s/AKfycbzVTDZQNd4gu5CZzSyvDgUw2CbMOuntBF8-NY55fvJnt4rrO_oi_t1ZCjQ3fShIF4j2Cg/exec',
+  FEED_URL: 'https://script.google.com/macros/s/AKfycbzNmMUxZWR7TtSGZYY0QS4Ld0oJ2QCs-OYB6cmOmBdHftrnZQdQkebt3ww-pbe11_BShA/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbzNmMUxZWR7TtSGZYY0QS4Ld0oJ2QCs-OYB6cmOmBdHftrnZQdQkebt3ww-pbe11_BShA/exec',
   API_TOKEN: '',
   CURRENCY: '₹',
   BRAND: 'Deloitte',
