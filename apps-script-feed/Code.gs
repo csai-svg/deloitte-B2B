@@ -1,25 +1,39 @@
 /*
-  B2B view-only catalogue — single Apps Script Web App, bound to the master
-  pricing spreadsheet. Does TWO things and nothing else:
+  B2B view-only catalogue — ONE shared Apps Script Web App, bound to the
+  master pricing spreadsheet, serving BOTH the Optum and Deloitte storefronts.
+  There is one catalogue (one sheet, one source of truth); the caller says
+  which brand it is on every request via ?brand=Optum|Deloitte (GET) or
+  {brand:'Optum'|'Deloitte'} (POST), and this script tags the response and
+  routes submissions accordingly. Two sheets would mean maintaining the same
+  catalogue twice and letting it drift — deliberately not done here.
 
-    doGet(?fn=catalog)  -> live JSON of ONLY the public columns (name, brand,
-                           description, gender, category, moq, gst, price
-                           tiers, image). Cost Price + Margins are NEVER read
-                           into the response, so the master sheet can stay
-                           private and nothing internal is exposed.
-    doPost {fn:'kit_request', ...} -> appends one row to the "Kit Requests"
-                           tab (created if missing) so ASMs see cart/kit
-                           submissions. No login, no approval, no payment.
+  Does TWO things and nothing else:
 
-  Deploy: Extensions > Apps Script (from the master sheet) > paste this >
-  Deploy > New deployment > Web app > Execute as: Me > Who has access:
-  Anyone > copy the /exec URL into the site's CONFIG.FEED_URL.
+    doGet(?fn=catalog&brand=Optum)  -> live JSON of ONLY the public columns
+                           (name, brand, description, gender, category, moq,
+                           gst, price tiers, image). Cost Price + Margins are
+                           NEVER read into the response, so the master sheet
+                           can stay private and nothing internal is exposed.
+    doPost {fn:'kit_request', brand:'Optum', ...} -> appends one row to that
+                           brand's own "<Brand> Kit Requests" tab (created if
+                           missing) so ASMs see cart/kit submissions per site,
+                           without splitting the catalogue itself.
+                           No login, no approval, no payment.
+
+  Deploy (once): Extensions > Apps Script (from the master sheet) > paste
+  this > Deploy > New deployment > Web app > Execute as: Me > Who has
+  access: Anyone > copy the ONE /exec URL into BOTH sites' CONFIG.FEED_URL /
+  CONFIG.API_URL (each site keeps its own CONFIG.BRAND — see assets/js/app.js).
+
+  Redeploying after an edit: Deploy > Manage deployments > (pencil icon on
+  the existing deployment) > Version: New version > Deploy. Editing the
+  existing deployment keeps the same /exec URL so neither site needs to
+  change its config.
 */
 
 var CFG = {
-  BRAND: 'Deloitte',                 // set per deployment: 'Deloitte' | 'Optum'
-  CATALOG_SHEET: 'Main Catalogue',   // tab name of the catalogue (edit to match)
-  KIT_SHEET: 'Kit Requests',         // created if absent
+  DEFAULT_BRAND: 'Optum',            // used only if a caller omits ?brand= / body.brand
+  CATALOG_SHEET: 'Main Catalogue',   // tab name of the shared catalogue (edit to match)
   TOKEN: '',                         // optional shared secret; '' = open
   CACHE_SECS: 60,
 };
@@ -47,31 +61,73 @@ function colors_(desc) {
     .filter(function (s) { return s && s.length < 30; }).slice(0, 12);
 }
 
-/* Category rules mirror the build-time pipeline. Overrides win. */
-var OVERRIDE = { 'CS0107': 'Apparel', 'CS0156': 'Tech', 'CS0194': 'Tech', 'CS0209': 'Tech',
-  'CS0159': 'Utilities', 'CS0161': 'Utilities', 'CS0162': 'Utilities', 'CS0163': 'Utilities',
-  'CS0164': 'Utilities', 'CS0165': 'Utilities', 'CS0201': 'Tech' };
-
-function category_(sku, name, brand, desc) {
-  if (OVERRIDE[sku]) return OVERRIDE[sku];
-  var t = (name + ' ' + brand + ' ' + desc).toLowerCase(), n = name.toLowerCase();
-  function has(a) { for (var i = 0; i < a.length; i++) if (t.indexOf(a[i]) >= 0) return true; return false; }
-  if (n.indexOf('gift box') >= 0) return 'Gift Box';
-  if (has(['polo', 't-shirt', 'tshirt', 't shirt', ' tee', 'shirt', 'hoodie', 'sweatshirt', 'jacket',
-    'round neck', 'track top', 'track jacket', 'track suit', 'tracksuit', 'puffer', 'fleece', ' cap', 'shoes', 'bomber'])) return 'Apparel';
-  if (has(['bottle', 'flask', 'mug', ' cup', 'tumbler', 'sipper', 'drinkware', 'vacuum flask', 'infuser', 'suction'])) return 'Drinkware';
-  if (has(['power bank', 'powerbank', 'speaker', 'earbud', 'headphone', 'neckband', 'charging cable', 'charger',
-    'wireless', 'blender', 'air fryer', 'airfryer', 'kettle', 'induction', 'juicer', 'steamer', 'cooktop', ' mop',
-    'grinder', 'smartwatch', 'bluetooth', 'adapter', 'hand fan', 'soundbar', 'aavante'])) return 'Tech';
-  if (has(['backpack', 'duffle', 'duffel', 'sling', 'trolley', 'luggage', 'suitcase', 'passport', 'messenger',
-    'crossbody', 'tote', 'jute', 'overnighter', 'laptop bag', 'laptop sleeve', 'lunch bag', 'dopp kit', ' travel ',
-    'folio', 'toiletry', 'toiletary', 'wayfarer', 'aviator', ' bag'])) return 'Travel';
-  if (has(['pouch', 'organizer', 'organiser', 'wallet', 'stand ', 'desk', 'lunch box', 'lunchbox', 'glass lunch',
-    'steel lunch', 'notebook', 'pen ', 'keychain'])) return 'Utilities';
-  return 'Utilities';
+/* Brand normaliser: only 'Optum' and 'Deloitte' are known; anything else
+   (missing/misspelled param) falls back to CFG.DEFAULT_BRAND so a bad ?brand=
+   never serves a made-up tab name or a blank-labelled catalogue. */
+function normalizeBrand_(raw) {
+  var b = String(raw || '').trim();
+  if (/^optum$/i.test(b)) return 'Optum';
+  if (/^deloitte$/i.test(b)) return 'Deloitte';
+  return CFG.DEFAULT_BRAND;
 }
 
-function buildCatalog_() {
+/* ------------------------------------------------------------------
+   classify_(): assigns BOTH a top-level category and a real sub-category
+   from the product name + description. Ordered rules, first match wins.
+   MUST stay identical to classify.py used to build assets/products.json,
+   so the live feed and the bundled snapshot group products the same way.
+   ------------------------------------------------------------------ */
+var NEUTRALIZE = [
+  /bottle (pocket|pockets|holder|holders|sleeve|compartment|cage|opener)/g,
+  /(screw|flip|flip-top|flip top|leak-?proof|spill-?proof|stylish|sipper|push-?button|press|one-press|twist|sliding|as sliding) (lid|cap)/g,
+  /bottle cap/g,
+  /pen (loop|loops|holder|pocket|slot)/g,
+  /shoe (pouch|pocket|compartment|bag)/g,
+  /(luggage|trolley) (mount|strap|straps|sleeve|pass-?through|pass|tag|handle)/g,
+  /bottle green/g
+];
+var RULES = [
+  [/gift box/, 'Gift Box', 'Gift Box'],
+  [/lunch ?box/, 'Utilities', 'Accessories'],
+  [/\bbottle|\bflask|\bsipper|sports bottle|\bthermos\b|insulated (bottle|flask)/, 'Drinkware', 'Bottles'],
+  [/\bcap\b|\bcaps\b|beanie|bucket hat|\bvisor\b/, 'Apparel', 'Headwear'],
+  [/hoodie|sweat ?shirt|half-?zip|quarter-?zip|hooded/, 'Apparel', 'Hoodies'],
+  [/\bjacket|\bpuffer|\bfleece|\bbomber|track top|track jacket|track suit|tracksuit|windcheater|\bgilet/, 'Apparel', 'Jackets'],
+  [/\bpolo|t-?shirt|\bt shirt|\btee\b|round neck|round-neck|crew neck|henley/, 'Apparel', 'T-Shirts'],
+  [/formal shirt|dress shirt|\bshirt/, 'Apparel', 'Shirts'],
+  [/\bshoes\b|sneaker|running shoes|sports shoes|footwear/, 'Apparel', 'Footwear'],
+  [/sound ?bar|aavante|\bspeaker|earbud|ear ?phone|head ?phone|neckband|smart ?watch|\bear ?buds?\b/, 'Tech', 'Audio & Wearables'],
+  [/power ?bank|wireless charg|charging (station|dock|cable)|multi-?charging|\bcharger\b|\badapter\b|charging cable/, 'Tech', 'Power & Charging'],
+  [/air ?fryer|\bkettle\b|induction|cook ?top|\bblender|\bjuicer|\bgrinder|garment steamer|\bsteamer\b|vacuum cleaner|cordless vacuum|car vacuum|\bmixer|hand fan|\bmop\b/, 'Tech', 'Appliances'],
+  [/frappe/, 'Drinkware', 'Frappe Mug'],
+  [/tumbler|travel mug|coffee mug|ceramic (mug|cup)|\bmug\b|\bmugs\b|suction cup|\bcup\b/, 'Drinkware', 'Mugs & tumblers'],
+  [/trolley|suit ?case|luggage|\bcabin\b|wayfarer|aviator|polycarbonate|polypropylene|hard ?top|hard-?shell|hard-?sided|travel gear|spinner wheel|telescopic/, 'Travel', 'Trolley bags'],
+  [/laptop backpack|\bbackpack\b|back pack|rucksack|daypack/, 'Travel', 'Backpack'],
+  [/\bduffle|\bduffel|weekender|gym bag/, 'Travel', 'Duffle bag'],
+  [/\btote\b|\bjute\b|cotton tote|shopper|shopping bag/, 'Travel', 'Tote bags'],
+  [/laptop sleeve|laptop bag|\bmessenger|\bsling|crossbody|work folio|\bfolio\b|file case|briefcase/, 'Travel', 'Laptop handbag'],
+  [/passport|dopp kit|toiletry|toiletary|neck pillow|travel set|lunch bag|packing/, 'Travel', 'Travel accessories'],
+  [/\bcoaster/, 'Utilities', 'Coasters'],
+  [/twist-mechanism pen|ball ?point|roller ?ball|stylus pen|\bpen\b(?! ?(loop|holder|stand|pocket|slot))|\bpens\b/, 'Utilities', 'Pens'],
+  [/note ?book|\bdiary\b|journal|notepad|organizer diary/, 'Utilities', 'Notebook'],
+  [/wallet|key ?chain|card holder|\bpouch|organiz|\bstand\b|desk|lunch ?box|tech organizer/, 'Utilities', 'Accessories']
+];
+
+function classify_(sku, name, brand, desc) {
+  if (String(name).toLowerCase().indexOf('gift box') >= 0) return ['Gift Box', 'Gift Box'];
+  var t = (name + ' ' + brand + ' ' + desc).toLowerCase();
+  for (var k = 0; k < NEUTRALIZE.length; k++) t = t.replace(NEUTRALIZE[k], ' ');
+  for (var i = 0; i < RULES.length; i++) {
+    if (RULES[i][0].test(t)) return [RULES[i][1], RULES[i][2]];
+  }
+  return ['Utilities', 'Accessories'];
+}
+
+/* Builds the (single, shared) catalogue and stamps it with whichever brand
+   asked for it. The products themselves never differ by brand — only this
+   top-level `brand` field does, so each site's header/footer/nav can read
+   it if it ever needs to. */
+function buildCatalog_(brand) {
   var ss = SpreadsheetApp.getActive();
   var sh = ss.getSheetByName(CFG.CATALOG_SHEET) || ss.getSheets()[0];
   var vals = sh.getDataRange().getValues();
@@ -89,7 +145,7 @@ function buildCatalog_() {
     if (!name) continue;
     var sr = String(row[ci.sr] || r).replace(/[^0-9]/g, '') || String(r);
     var sku = 'CS' + ('0000' + sr).slice(-4);
-    var brand = String(row[ci.brand] || '').trim();
+    var itemBrand = String(row[ci.brand] || '').trim();
     var desc = String(row[ci.desc] || '').replace(/\s+/g, ' ').trim();
     var gst = parseInt(String(row[ci.tax]).replace(/[^0-9]/g, ''), 10) || 0;
     var moq = parseInt(String(row[ci.moq]).replace(/[^0-9]/g, ''), 10) || 20;
@@ -98,9 +154,10 @@ function buildCatalog_() {
       var p = b[0] >= 0 ? num_(row[b[0]]) : null;
       if (p) tiers.push({ min_qty: (b[1] === 20 ? moq : b[1]), max_qty: b[2], unit_price: p, gst_rate: gst });
     });
-    var cat = category_(sku, name, brand, desc);
+    var cls = classify_(sku, name, itemBrand, desc);
+    var cat = cls[0], sub = cls[1];
     products.push({
-      sku: sku, name: name, category: cat, subcategory: brand || cat, brand: brand, description: desc,
+      sku: sku, name: name, category: cat, subcategory: sub, brand: itemBrand, description: desc,
       gender: String(row[ci.gender] || '').trim(), colors: colors_(desc), moq: moq, gst_rate: gst,
       tiers: tiers, base_price: tiers.length ? tiers[0].unit_price : 0, sizes: ['OS'], has_sizes: false,
       image: ci.img >= 0 ? String(row[ci.img] || '').trim() : '', active: true, related: [],
@@ -108,8 +165,8 @@ function buildCatalog_() {
     });
   }
   return {
-    generated_at: new Date().toISOString(), brand: CFG.BRAND,
-    categories: ['Apparel', 'Drinkware', 'Travel', 'Utilities', 'Tech'],
+    generated_at: new Date().toISOString(), brand: brand,
+    categories: ['Apparel', 'Drinkware', 'Travel', 'Tech', 'Utilities'],
     products: products, event_kits: products.filter(function (p) { return p.category === 'Gift Box'; }).map(function (p) { return p.sku; }),
   };
 }
@@ -123,11 +180,12 @@ function jsonOut_(obj, cb) {
 function doGet(e) {
   var p = (e && e.parameter) || {};
   if (CFG.TOKEN && p.token !== CFG.TOKEN) return jsonOut_({ error: 'unauthorized' }, p.callback);
+  var brand = normalizeBrand_(p.brand);
   var cache = CacheService.getScriptCache();
-  var key = 'catalog_' + CFG.BRAND;
+  var key = 'catalog_' + brand;
   var hit = cache.get(key);
   if (hit && !p.nocache) return jsonOut_(JSON.parse(hit), p.callback);
-  var data = buildCatalog_();
+  var data = buildCatalog_(brand);
   try { cache.put(key, JSON.stringify(data), CFG.CACHE_SECS); } catch (err) {}
   return jsonOut_(data, p.callback);
 }
@@ -137,15 +195,18 @@ function doPost(e) {
   try { body = JSON.parse(e.postData.contents); } catch (err) { return jsonOut_({ ok: false, error: 'bad json' }); }
   if (CFG.TOKEN && body.token !== CFG.TOKEN) return jsonOut_({ ok: false, error: 'unauthorized' });
   if (body.fn !== 'kit_request') return jsonOut_({ ok: false, error: 'unknown fn' });
+
+  var brand = normalizeBrand_(body.brand);   // 'Optum' or 'Deloitte', from the site that submitted
+  var tabName = brand + ' Kit Requests';     // per-brand tab, created on demand
   var ss = SpreadsheetApp.getActive();
-  var sh = ss.getSheetByName(CFG.KIT_SHEET);
+  var sh = ss.getSheetByName(tabName);
   if (!sh) {
-    sh = ss.insertSheet(CFG.KIT_SHEET);
+    sh = ss.insertSheet(tabName);
     sh.appendRow(['Timestamp', 'Brand', 'Name', 'Work email', 'Notes / deadline', 'Items (summary)', 'Total qty', 'Items (JSON)']);
   }
   var items = body.items || [];
   var summary = items.map(function (it) { return it.qty + ' x ' + it.name + (it.sku ? ' [' + it.sku + ']' : ''); }).join('; ');
   var totalQty = items.reduce(function (s, it) { return s + (Number(it.qty) || 0); }, 0);
-  sh.appendRow([new Date(), CFG.BRAND, body.name || '', body.email || '', body.notes || '', summary, totalQty, JSON.stringify(items)]);
+  sh.appendRow([new Date(), brand, body.name || '', body.email || '', body.notes || '', summary, totalQty, JSON.stringify(items)]);
   return jsonOut_({ ok: true });
 }

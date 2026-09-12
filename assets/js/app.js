@@ -312,7 +312,8 @@ function jsonp(url, timeoutMs = 8000) {
    on the (sometimes slow) Apps Script call. Meanwhile the feed is fetched and
    cached, so the next page navigation shows the latest sheet data. */
 function feedUrl() {
-  return CONFIG.FEED_URL + '?fn=catalog' + (CONFIG.API_TOKEN ? '&token=' + encodeURIComponent(CONFIG.API_TOKEN) : '');
+  return CONFIG.FEED_URL + '?fn=catalog&brand=' + encodeURIComponent(CONFIG.BRAND)
+    + (CONFIG.API_TOKEN ? '&token=' + encodeURIComponent(CONFIG.API_TOKEN) : '');
 }
 function refreshFeedCache() {
   if (!CONFIG.FEED_URL) return;
