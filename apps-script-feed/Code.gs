@@ -210,3 +210,49 @@ function doPost(e) {
   sh.appendRow([new Date(), brand, body.name || '', body.email || '', body.notes || '', summary, totalQty, JSON.stringify(items)]);
   return jsonOut_({ ok: true });
 }
+
+/* ------------------------------------------------------------------
+   ONE-OFF: migrate the Image URL column off Google Drive onto the
+   shared static host (github.com/csai-svg/B2B-assets, published via
+   GitHub Pages). Run this ONCE from the Apps Script editor (select
+   migrateImageUrls in the function dropdown > Run) after confirming
+   MANIFEST_URL below actually resolves — it will prompt for URL-fetch
+   authorization the first time. Safe to re-run: it only overwrites a
+   row when the manifest has that SKU, and does nothing to any other
+   column. Does NOT touch classify_/buildCatalog_ — they keep reading
+   whatever ends up in the Image URL column, verbatim, same as today.
+   ------------------------------------------------------------------ */
+var MANIFEST_URL = 'https://csai-svg.github.io/B2B-assets/manifest.json';
+
+function migrateImageUrls() {
+  var manifest = JSON.parse(UrlFetchApp.fetch(MANIFEST_URL).getContentText());
+
+  var ss = SpreadsheetApp.getActive();
+  var sh = ss.getSheetByName(CFG.CATALOG_SHEET) || ss.getSheets()[0];
+  var vals = sh.getDataRange().getValues();
+  var header = vals[0], C = colMap_(header);
+  var ci = { sr: C('sr no'), img: C('image url') };
+  if (ci.sr < 0 || ci.img < 0) {
+    throw new Error('migrateImageUrls: could not find "Sr No" or "Image URL" column');
+  }
+
+  var updated = 0, unchanged = 0, noManifestEntry = [];
+  for (var r = 1; r < vals.length; r++) {
+    var row = vals[r];
+    var sr = String(row[ci.sr] || '').replace(/[^0-9]/g, '');
+    if (!sr) continue;
+    var sku = 'CS' + ('0000' + sr).slice(-4);
+    var newUrl = manifest[sku];
+    if (!newUrl) { noManifestEntry.push(sku); continue; }
+    var currentUrl = String(row[ci.img] || '').trim();
+    if (currentUrl === newUrl) { unchanged++; continue; }
+    sh.getRange(r + 1, ci.img + 1).setValue(newUrl);
+    updated++;
+  }
+
+  var summary = 'migrateImageUrls: updated ' + updated + ', already correct ' + unchanged +
+    ', no manifest entry for ' + noManifestEntry.length +
+    (noManifestEntry.length ? (' (' + noManifestEntry.slice(0, 20).join(', ') + (noManifestEntry.length > 20 ? ', …' : '') + ')') : '');
+  Logger.log(summary);
+  return summary;
+}
