@@ -207,9 +207,12 @@ const CATEGORY_FALLBACK_GROUP = 'Utilities';
    `category` and their original tag as `subcategory`; `categories` is
    rebuilt as the four groups, each listing only the tags that actually
    have products behind them (so the dropdowns never show a dead link). */
-function regroupCatalogue(data) {
+function regroupCatalogue(data, taxonomy) {
+  taxonomy = taxonomy || {};
   const seen = {};
   for (const p of data.products || []) {
+    const t = taxonomy[p.sku];
+    if (t) { p.category = t.category; p.subcategory = t.subcategory; }
     let group = p.category;
     if (!NAV_CATEGORIES.includes(group) && group !== 'Gift Box') group = CATEGORY_FALLBACK_GROUP;
     p.category = group;
@@ -304,29 +307,40 @@ function jsonp(url, timeoutMs = 8000) {
   });
 }
 
+/* Render instantly, sync in the background. First paint uses a live feed
+   result cached earlier this session, else the bundled snapshot — never blocks
+   on the (sometimes slow) Apps Script call. Meanwhile the feed is fetched and
+   cached, so the next page navigation shows the latest sheet data. */
+function feedUrl() {
+  return CONFIG.FEED_URL + '?fn=catalog' + (CONFIG.API_TOKEN ? '&token=' + encodeURIComponent(CONFIG.API_TOKEN) : '');
+}
+function refreshFeedCache() {
+  if (!CONFIG.FEED_URL) return;
+  jsonp(feedUrl(), 12000)
+    .then(d => { if (d && Array.isArray(d.products) && d.products.length) { try { sessionStorage.setItem('cs_feed', JSON.stringify(d)); } catch (e) {} } })
+    .catch(() => {});
+}
 async function loadCatalogueJSON() {
-  const snapshot = () => fetch('assets/products.json').then(r => r.json());
-  if (!CONFIG.FEED_URL) return snapshot();
-  try {
-    const u = CONFIG.FEED_URL + '?fn=catalog' + (CONFIG.API_TOKEN ? '&token=' + encodeURIComponent(CONFIG.API_TOKEN) : '');
-    const data = await jsonp(u);
-    if (!data || !Array.isArray(data.products) || !data.products.length) throw new Error('empty feed');
-    return data;
-  } catch (err) {
-    return snapshot();
+  let base = null;
+  try { const c = sessionStorage.getItem('cs_feed'); if (c) base = JSON.parse(c); } catch (e) {}
+  if (!base || !Array.isArray(base.products) || !base.products.length) {
+    base = await fetch('assets/products.json').then(r => r.json());
   }
+  refreshFeedCache();   // background, non-blocking — updates the cache for the next page
+  return base;
 }
 
 const Catalog = {
   _data: null,
   async load() {
     if (this._data) return this._data;
-    const [raw, cw] = await Promise.all([
+    const [raw, cw, tax] = await Promise.all([
       loadCatalogueJSON(),
       fetch('assets/colorways.json').then(r => r.ok ? r.json() : { groups: [] }).catch(() => ({ groups: [] })),
+      fetch('assets/taxonomy.json').then(r => r.ok ? r.json() : {}).catch(() => ({})),
       Site.load(),
     ]);
-    this._data = regroupCatalogue(raw);
+    this._data = regroupCatalogue(raw, tax);
     for (const p of this._data.products) if (!p.image) p.image = PLACEHOLDER_IMG;
     /* bySku indexes EVERY product, including colours hidden from listings,
        so a direct product.html?sku=... link always resolves */

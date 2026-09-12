@@ -1,0 +1,890 @@
+{
+"CS0110": {
+"category": "Apparel",
+"subcategory": "Footwear"
+},
+"CS0108": {
+"category": "Apparel",
+"subcategory": "Headwear"
+},
+"CS0130": {
+"category": "Apparel",
+"subcategory": "Headwear"
+},
+"CS0091": {
+"category": "Apparel",
+"subcategory": "Hoodies"
+},
+"CS0092": {
+"category": "Apparel",
+"subcategory": "Hoodies"
+},
+"CS0106": {
+"category": "Apparel",
+"subcategory": "Hoodies"
+},
+"CS0121": {
+"category": "Apparel",
+"subcategory": "Hoodies"
+},
+"CS0123": {
+"category": "Apparel",
+"subcategory": "Hoodies"
+},
+"CS0128": {
+"category": "Apparel",
+"subcategory": "Hoodies"
+},
+"CS0093": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0094": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0095": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0104": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0105": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0107": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0112": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0114": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0115": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0117": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0120": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0122": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0129": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0135": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0136": {
+"category": "Apparel",
+"subcategory": "Jackets"
+},
+"CS0096": {
+"category": "Apparel",
+"subcategory": "Shirts"
+},
+"CS0097": {
+"category": "Apparel",
+"subcategory": "Shirts"
+},
+"CS0098": {
+"category": "Apparel",
+"subcategory": "Shirts"
+},
+"CS0113": {
+"category": "Apparel",
+"subcategory": "Shirts"
+},
+"CS0119": {
+"category": "Apparel",
+"subcategory": "Shirts"
+},
+"CS0124": {
+"category": "Apparel",
+"subcategory": "Shirts"
+},
+"CS0125": {
+"category": "Apparel",
+"subcategory": "Shirts"
+},
+"CS0073": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0074": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0075": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0076": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0077": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0078": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0079": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0080": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0081": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0082": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0083": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0084": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0085": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0086": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0087": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0088": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0089": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0090": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0099": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0100": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0101": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0102": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0103": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0111": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0116": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0118": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0126": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0127": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0133": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0134": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0137": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0138": {
+"category": "Apparel",
+"subcategory": "T-Shirts"
+},
+"CS0061": {
+"category": "Drinkware",
+"subcategory": "Bottles"
+},
+"CS0062": {
+"category": "Drinkware",
+"subcategory": "Bottles"
+},
+"CS0063": {
+"category": "Drinkware",
+"subcategory": "Bottles"
+},
+"CS0064": {
+"category": "Drinkware",
+"subcategory": "Bottles"
+},
+"CS0065": {
+"category": "Drinkware",
+"subcategory": "Bottles"
+},
+"CS0066": {
+"category": "Drinkware",
+"subcategory": "Bottles"
+},
+"CS0071": {
+"category": "Drinkware",
+"subcategory": "Bottles"
+},
+"CS0152": {
+"category": "Drinkware",
+"subcategory": "Bottles"
+},
+"CS0153": {
+"category": "Drinkware",
+"subcategory": "Bottles"
+},
+"CS0154": {
+"category": "Drinkware",
+"subcategory": "Bottles"
+},
+"CS0155": {
+"category": "Drinkware",
+"subcategory": "Bottles"
+},
+"CS0170": {
+"category": "Drinkware",
+"subcategory": "Bottles"
+},
+"CS0171": {
+"category": "Drinkware",
+"subcategory": "Bottles"
+},
+"CS0172": {
+"category": "Drinkware",
+"subcategory": "Bottles"
+},
+"CS0067": {
+"category": "Drinkware",
+"subcategory": "Mugs & tumblers"
+},
+"CS0068": {
+"category": "Drinkware",
+"subcategory": "Mugs & tumblers"
+},
+"CS0069": {
+"category": "Drinkware",
+"subcategory": "Mugs & tumblers"
+},
+"CS0070": {
+"category": "Drinkware",
+"subcategory": "Mugs & tumblers"
+},
+"CS0072": {
+"category": "Drinkware",
+"subcategory": "Mugs & tumblers"
+},
+"CS0147": {
+"category": "Drinkware",
+"subcategory": "Mugs & tumblers"
+},
+"CS0148": {
+"category": "Drinkware",
+"subcategory": "Mugs & tumblers"
+},
+"CS0149": {
+"category": "Drinkware",
+"subcategory": "Mugs & tumblers"
+},
+"CS0150": {
+"category": "Drinkware",
+"subcategory": "Mugs & tumblers"
+},
+"CS0151": {
+"category": "Drinkware",
+"subcategory": "Mugs & tumblers"
+},
+"CS0173": {
+"category": "Drinkware",
+"subcategory": "Mugs & tumblers"
+},
+"CS0023": {
+"category": "Travel",
+"subcategory": "Backpack"
+},
+"CS0024": {
+"category": "Travel",
+"subcategory": "Backpack"
+},
+"CS0132": {
+"category": "Travel",
+"subcategory": "Backpack"
+},
+"CS0139": {
+"category": "Travel",
+"subcategory": "Backpack"
+},
+"CS0140": {
+"category": "Travel",
+"subcategory": "Backpack"
+},
+"CS0177": {
+"category": "Travel",
+"subcategory": "Backpack"
+},
+"CS0185": {
+"category": "Travel",
+"subcategory": "Backpack"
+},
+"CS0186": {
+"category": "Travel",
+"subcategory": "Backpack"
+},
+"CS0187": {
+"category": "Travel",
+"subcategory": "Backpack"
+},
+"CS0188": {
+"category": "Travel",
+"subcategory": "Backpack"
+},
+"CS0189": {
+"category": "Travel",
+"subcategory": "Backpack"
+},
+"CS0025": {
+"category": "Travel",
+"subcategory": "Duffle bag"
+},
+"CS0026": {
+"category": "Travel",
+"subcategory": "Duffle bag"
+},
+"CS0027": {
+"category": "Travel",
+"subcategory": "Duffle bag"
+},
+"CS0028": {
+"category": "Travel",
+"subcategory": "Duffle bag"
+},
+"CS0109": {
+"category": "Travel",
+"subcategory": "Duffle bag"
+},
+"CS0131": {
+"category": "Travel",
+"subcategory": "Duffle bag"
+},
+"CS0141": {
+"category": "Travel",
+"subcategory": "Duffle bag"
+},
+"CS0142": {
+"category": "Travel",
+"subcategory": "Duffle bag"
+},
+"CS0169": {
+"category": "Travel",
+"subcategory": "Duffle bag"
+},
+"CS0178": {
+"category": "Travel",
+"subcategory": "Duffle bag"
+},
+"CS0191": {
+"category": "Travel",
+"subcategory": "Duffle bag"
+},
+"CS0200": {
+"category": "Travel",
+"subcategory": "Duffle bag"
+},
+"CS0010": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0011": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0012": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0013": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0014": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0015": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0016": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0018": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0019": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0021": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0022": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0143": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0167": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0168": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0179": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0180": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0190": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0192": {
+"category": "Travel",
+"subcategory": "Laptop handbag"
+},
+"CS0055": {
+"category": "Travel",
+"subcategory": "Tote bags"
+},
+"CS0056": {
+"category": "Travel",
+"subcategory": "Tote bags"
+},
+"CS0057": {
+"category": "Travel",
+"subcategory": "Tote bags"
+},
+"CS0058": {
+"category": "Travel",
+"subcategory": "Tote bags"
+},
+"CS0059": {
+"category": "Travel",
+"subcategory": "Tote bags"
+},
+"CS0060": {
+"category": "Travel",
+"subcategory": "Tote bags"
+},
+"CS0002": {
+"category": "Travel",
+"subcategory": "Travel accessories"
+},
+"CS0003": {
+"category": "Travel",
+"subcategory": "Travel accessories"
+},
+"CS0009": {
+"category": "Travel",
+"subcategory": "Travel accessories"
+},
+"CS0158": {
+"category": "Travel",
+"subcategory": "Travel accessories"
+},
+"CS0166": {
+"category": "Travel",
+"subcategory": "Travel accessories"
+},
+"CS0193": {
+"category": "Travel",
+"subcategory": "Travel accessories"
+},
+"CS0017": {
+"category": "Travel",
+"subcategory": "Trolley bags"
+},
+"CS0029": {
+"category": "Travel",
+"subcategory": "Trolley bags"
+},
+"CS0144": {
+"category": "Travel",
+"subcategory": "Trolley bags"
+},
+"CS0145": {
+"category": "Travel",
+"subcategory": "Trolley bags"
+},
+"CS0146": {
+"category": "Travel",
+"subcategory": "Trolley bags"
+},
+"CS0174": {
+"category": "Travel",
+"subcategory": "Trolley bags"
+},
+"CS0175": {
+"category": "Travel",
+"subcategory": "Trolley bags"
+},
+"CS0176": {
+"category": "Travel",
+"subcategory": "Trolley bags"
+},
+"CS0181": {
+"category": "Travel",
+"subcategory": "Trolley bags"
+},
+"CS0182": {
+"category": "Travel",
+"subcategory": "Trolley bags"
+},
+"CS0183": {
+"category": "Travel",
+"subcategory": "Trolley bags"
+},
+"CS0184": {
+"category": "Travel",
+"subcategory": "Trolley bags"
+},
+"CS0198": {
+"category": "Travel",
+"subcategory": "Trolley bags"
+},
+"CS0199": {
+"category": "Travel",
+"subcategory": "Trolley bags"
+},
+"CS0194": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0195": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0196": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0197": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0204": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0205": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0206": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0208": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0212": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0213": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0214": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0218": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0219": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0220": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0221": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0222": {
+"category": "Tech",
+"subcategory": "Appliances"
+},
+"CS0201": {
+"category": "Tech",
+"subcategory": "Audio & Wearables"
+},
+"CS0202": {
+"category": "Tech",
+"subcategory": "Audio & Wearables"
+},
+"CS0020": {
+"category": "Tech",
+"subcategory": "Power & Charging"
+},
+"CS0156": {
+"category": "Tech",
+"subcategory": "Power & Charging"
+},
+"CS0203": {
+"category": "Tech",
+"subcategory": "Power & Charging"
+},
+"CS0207": {
+"category": "Tech",
+"subcategory": "Power & Charging"
+},
+"CS0209": {
+"category": "Tech",
+"subcategory": "Power & Charging"
+},
+"CS0210": {
+"category": "Tech",
+"subcategory": "Power & Charging"
+},
+"CS0211": {
+"category": "Tech",
+"subcategory": "Power & Charging"
+},
+"CS0001": {
+"category": "Utilities",
+"subcategory": "Accessories"
+},
+"CS0004": {
+"category": "Utilities",
+"subcategory": "Accessories"
+},
+"CS0005": {
+"category": "Utilities",
+"subcategory": "Accessories"
+},
+"CS0006": {
+"category": "Utilities",
+"subcategory": "Accessories"
+},
+"CS0007": {
+"category": "Utilities",
+"subcategory": "Accessories"
+},
+"CS0008": {
+"category": "Utilities",
+"subcategory": "Accessories"
+},
+"CS0157": {
+"category": "Utilities",
+"subcategory": "Accessories"
+},
+"CS0159": {
+"category": "Utilities",
+"subcategory": "Accessories"
+},
+"CS0215": {
+"category": "Utilities",
+"subcategory": "Accessories"
+},
+"CS0216": {
+"category": "Utilities",
+"subcategory": "Accessories"
+},
+"CS0217": {
+"category": "Utilities",
+"subcategory": "Accessories"
+},
+"CS0160": {
+"category": "Utilities",
+"subcategory": "Notebook"
+},
+"CS0161": {
+"category": "Utilities",
+"subcategory": "Notebook"
+},
+"CS0162": {
+"category": "Utilities",
+"subcategory": "Notebook"
+},
+"CS0163": {
+"category": "Utilities",
+"subcategory": "Notebook"
+},
+"CS0164": {
+"category": "Utilities",
+"subcategory": "Pens"
+},
+"CS0165": {
+"category": "Utilities",
+"subcategory": "Pens"
+},
+"CS0030": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0031": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0032": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0033": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0034": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0035": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0036": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0037": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0038": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0039": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0040": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0041": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0042": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0043": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0044": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0045": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0046": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0047": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0048": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0049": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0050": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0051": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0052": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0053": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+},
+"CS0054": {
+"category": "Gift Box",
+"subcategory": "Gift Box"
+}
+}

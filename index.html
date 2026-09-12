@@ -46,8 +46,9 @@
   /* Each category is shown by its dearest product, which is reliably the one
      photographed well enough to carry a tile. */
   document.getElementById('cats').append(...Catalog.categories.map(c => {
-    const rep = Catalog.products
-      .filter(p => p.category === c.slug)
+    const inCat = Catalog.products.filter(p => p.category === c.slug);
+    const withImg = inCat.filter(p => p.image && !String(p.image).startsWith('data:'));
+    const rep = (withImg.length ? withImg : inCat)
       .sort((a, b) => b.base_price - a.base_price)[0];
     return el('a', { class: 'cat-tile', href: 'category.html?cat=' + encodeURIComponent(c.slug) },
       el('div', { class: 'cat-tile-img' },
