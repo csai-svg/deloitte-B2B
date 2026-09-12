@@ -106,7 +106,7 @@ function paint() {
     return el('div', { class: 'panel' },
       el('div', { class: 'row-between', style: 'align-items:flex-start' },
         el('div', { class: 'row', style: 'align-items:flex-start' },
-          el('img', { class: 'thumb', src: g.product.image, alt: '' }),
+          el('img', { class: 'thumb', src: imgAt(g.product.image, 200), alt: '' }),
           el('div', {},
             el('div', { class: 'card-sku' }, sku),
             el('a', { href: 'product.html?sku=' + encodeURIComponent(sku) },

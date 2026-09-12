@@ -147,7 +147,7 @@ h3 { font-size: 1.05rem; }
   aspect-ratio: 1; background: var(--off);
   display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
-.card-img img { width: 100%; height: 100%; object-fit: contain; mix-blend-mode: multiply; }
+.card-img img { width: 100%; height: 100%; object-fit: contain; }
 
 .card-body { padding: 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
 .card-name { font-weight: 700; font-size: .92rem; line-height: 1.35; }
@@ -167,7 +167,7 @@ h3 { font-size: 1.05rem; }
 .pdp { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; margin: 32px 0; align-items: start; }
 .pdp > * { min-width: 0; }
 .pdp-img { background: var(--off); border-radius: var(--radius); aspect-ratio: 1; position: sticky; top: 88px; display: flex; align-items: center; justify-content: center; }
-.pdp-img img { width: 92%; height: 92%; object-fit: contain; mix-blend-mode: multiply; }
+.pdp-img img { width: 92%; height: 92%; object-fit: contain; }
 
 .spec-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .spec-table td { padding: 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -247,7 +247,7 @@ input[type=file] { font-size: .85rem; }
 .tbl tbody tr:hover { background: var(--off); }
 .tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
 
-.thumb { width: 52px; height: 52px; object-fit: contain; background: var(--off); border-radius: 6px; mix-blend-mode: multiply; }
+.thumb { width: 52px; height: 52px; object-fit: contain; background: var(--off); border-radius: 6px; }
 
 .qty-in { width: 76px; text-align: center; }
 
@@ -516,7 +516,7 @@ input[type=file] { font-size: .85rem; }
 .hero-art { position: relative; background: var(--ink); }
 .hero-slide { display: none; }
 .hero-slide.on { display: block; }
-.hero-slide img { display: block; width: 100%; height: auto; }
+.hero-slide img { display: block; width: 100%; height: auto; aspect-ratio: 2073 / 600; object-fit: cover; }
 .hero-dots { position: absolute; left: 0; right: 0; bottom: 14px;
              display: flex; justify-content: center; gap: 9px; }
 .hero-dot { width: 11px; height: 11px; padding: 0; border: 0; border-radius: 50%;

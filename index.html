@@ -52,7 +52,7 @@
       .sort((a, b) => b.base_price - a.base_price)[0];
     return el('a', { class: 'cat-tile', href: 'category.html?cat=' + encodeURIComponent(c.slug) },
       el('div', { class: 'cat-tile-img' },
-        rep ? el('img', { src: rep.image, alt: '', loading: 'lazy' }) : null),
+        rep ? el('img', { src: imgAt(rep.image, 400), alt: '', loading: 'lazy' }) : null),
       el('div', { class: 'cat-tile-label' }, c.label),
       el('div', { class: 'small muted' }, `${counts[c.slug] || 0} products`));
   }));

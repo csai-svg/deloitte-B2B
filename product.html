@@ -54,7 +54,7 @@ let P = null;
     el('a', { href: 'category.html?cat=' + encodeURIComponent(P.category) + '&sub=' + encodeURIComponent(P.subcategory) }, P.subcategory));
 
   document.getElementById('pdp').append(
-    el('div', { class: 'pdp-img' }, el('img', { src: P.image, alt: P.name })),
+    el('div', { class: 'pdp-img' }, el('img', { src: imgAt(P.image, 800), alt: P.name })),
     el('div', {}, buyPanel()));
 
   paint();

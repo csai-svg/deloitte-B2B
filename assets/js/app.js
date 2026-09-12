@@ -26,6 +26,13 @@ const qty = n => Number(n || 0).toLocaleString('en-IN');
 
 const param = k => new URLSearchParams(location.search).get(k) || '';
 
+/* Delays fn until wait ms after the last call — used so typing into a filter
+   field doesn't re-render the whole grid on every keystroke. */
+function debounce_(fn, wait = 200) {
+  let t;
+  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), wait); };
+}
+
 function el(tag, attrs = {}, ...kids) {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -285,6 +292,16 @@ const PLACEHOLDER_IMG = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent
   '<rect width="100%" height="100%" fill="#f1f1f1"/>' +
   '<text x="50%" y="50%" fill="#9aa0a6" font-family="system-ui,-apple-system,sans-serif" ' +
   'font-size="18" text-anchor="middle" dominant-baseline="middle">Image coming soon</text></svg>');
+
+/* Every product photo is a Google Drive proxy URL (lh3.googleusercontent.com/d/<id>=w1200)
+   served at the same 1200px width no matter how small it's actually shown. This rewrites
+   the size suffix to whatever the call site needs, so a 52px thumbnail doesn't download a
+   full-size original. Passes anything else (the data: placeholder, a non-Drive URL) through
+   unchanged. */
+function imgAt(url, w) {
+  if (!url || url.startsWith('data:') || !url.includes('googleusercontent.com')) return url;
+  return url.replace(/=w\d+$/, '=w' + w);
+}
 
 /* Live catalogue from the Apps Script feed when configured, else the bundled
    snapshot. The feed returns ONLY public columns (no cost/margins); the master
@@ -628,7 +645,13 @@ const Filters = {
   bar(host, opts, onChange) {
     opts = opts || {};
     const s = this.state;
-    const fire = () => onChange();
+    const fireNow = () => onChange();
+    /* Typed inputs (search/min/max/moq) re-render 200ms after the last
+       keystroke instead of on every one — 220+ products is enough to make
+       an un-debounced grid rebuild visibly stutter while typing. Discrete
+       choices (sort/category selects, the Reset button) still fire right
+       away since there's no keystroke stream to coalesce. */
+    const fire = debounce_(fireNow, 200);
 
     const field = (label, input) =>
       el('label', { class: 'fbar-fld' }, el('span', {}, label), input);
@@ -639,7 +662,7 @@ const Filters = {
     });
 
     const sort = el('select', {
-      id: 'fsort', onchange: e => { s.sort = e.target.value; fire(); },
+      id: 'fsort', onchange: e => { s.sort = e.target.value; fireNow(); },
     }, [['featured', 'Featured'], ['pl', 'Price: low to high'], ['ph', 'Price: high to low'],
         ['az', 'Name A–Z'], ['moq', 'MOQ: low to high']].map(([v, t]) =>
       el('option', { value: v, selected: s.sort === v ? 'selected' : null }, t)));
@@ -660,7 +683,7 @@ const Filters = {
 
     if (opts.categories) {
       const cat = el('select', {
-        id: 'fcat', onchange: e => { s.cat = e.target.value; s.sub = ''; fire(); },
+        id: 'fcat', onchange: e => { s.cat = e.target.value; s.sub = ''; fireNow(); },
       }, el('option', { value: '' }, 'All categories'),
          ...opts.categories.map(c => el('option', { value: c, selected: s.cat === c ? 'selected' : null }, c)));
       bits.splice(1, 0, field('Category', cat));
@@ -671,7 +694,7 @@ const Filters = {
         class: 'btn btn-ghost btn-sm', style: 'margin-left:auto',
         onclick: () => { const keep = s.cat, sub = s.sub; Filters.reset();
           Filters.state.cat = opts.keepCategory ? keep : ''; Filters.state.sub = opts.keepCategory ? sub : '';
-          host.textContent = ''; Filters.bar(host, opts, onChange); fire(); },
+          host.textContent = ''; Filters.bar(host, opts, onChange); fireNow(); },
       }, 'Reset')));
   },
 };
@@ -918,7 +941,7 @@ function mount(active) {
 function productCard(p) {
   const lowest = lowestPrice(p);
   return el('a', { class: 'card', href: 'product.html?sku=' + encodeURIComponent(p.sku) },
-    el('div', { class: 'card-img' }, el('img', { src: p.image, alt: p.name, loading: 'lazy' })),
+    el('div', { class: 'card-img' }, el('img', { src: imgAt(p.image, 400), alt: p.name, loading: 'lazy' })),
     el('div', { class: 'card-body' },
       el('div', { class: 'card-sku' }, p.sku),
       el('div', { class: 'card-name' },
