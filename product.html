@@ -84,13 +84,34 @@ function colourPicker() {
 }
 
 function paintRelated() {
-  const skus = (P.related || []).filter(s => Catalog.bySku(s));
-  if (!skus.length) return;
+  let items = (P.related || []).map(s => Catalog.bySku(s)).filter(Boolean);
+
+  /* No curated list: fall back to other products in the same subcategory,
+     topped up from the wider category if that's not enough. Real photos
+     are preferred over the data: placeholder so the row doesn't look bare. */
+  if (!items.length) {
+    const isReal = p => p.image && !p.image.startsWith('data:');
+    const others = Catalog.products.filter(p => p.sku !== P.sku);
+    const sameSub = others.filter(p => p.subcategory === P.subcategory);
+    const sameCat = others.filter(p => p.category === P.category && p.subcategory !== P.subcategory);
+    const pick = (pool, n) => {
+      const withPhoto = pool.filter(isReal);
+      const rest = pool.filter(p => !isReal(p));
+      return withPhoto.concat(rest).slice(0, n);
+    };
+    items = pick(sameSub, 4);
+    if (items.length < 4) {
+      const have = new Set(items.map(p => p.sku));
+      items = items.concat(pick(sameCat.filter(p => !have.has(p.sku)), 4 - items.length));
+    }
+  }
+
+  if (!items.length) return;
   document.querySelector('main').append(
     el('div', { style: 'margin:44px 0 0' },
       el('h2', {}, 'You may also be interested in this'),
       el('div', { class: 'grid', style: 'margin-top:16px' },
-        skus.map(s => productCard(Catalog.bySku(s))))));
+        items.map(p => productCard(p)))));
 }
 
 function buyPanel() {
