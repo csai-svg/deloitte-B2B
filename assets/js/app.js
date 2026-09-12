@@ -287,14 +287,29 @@ const PLACEHOLDER_IMG = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent
    snapshot. The feed returns ONLY public columns (no cost/margins); the master
    sheet stays private. A slow/failed feed falls back to the snapshot so the
    store always renders. */
+/* Apps Script web apps block cross-origin fetch() (CORS), so the live feed is
+   loaded via JSONP (a <script> tag calling back a global) — Code.gs returns
+   `callback(json)` when ?callback= is present. No CORS, no redeploy. */
+function jsonp(url, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    const cb = '__feedcb_' + Math.random().toString(36).slice(2);
+    const s = document.createElement('script');
+    let done = false;
+    const cleanup = () => { try { delete window[cb]; } catch (e) { window[cb] = undefined; } s.remove(); };
+    const timer = setTimeout(() => { if (!done) { done = true; cleanup(); reject(new Error('jsonp timeout')); } }, timeoutMs);
+    window[cb] = data => { if (done) return; done = true; clearTimeout(timer); cleanup(); resolve(data); };
+    s.onerror = () => { if (done) return; done = true; clearTimeout(timer); cleanup(); reject(new Error('jsonp error')); };
+    s.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cb;
+    document.head.appendChild(s);
+  });
+}
+
 async function loadCatalogueJSON() {
   const snapshot = () => fetch('assets/products.json').then(r => r.json());
   if (!CONFIG.FEED_URL) return snapshot();
   try {
     const u = CONFIG.FEED_URL + '?fn=catalog' + (CONFIG.API_TOKEN ? '&token=' + encodeURIComponent(CONFIG.API_TOKEN) : '');
-    const res = await fetch(u, { redirect: 'follow' });
-    if (!res.ok) throw new Error('feed ' + res.status);
-    const data = await res.json();
+    const data = await jsonp(u);
     if (!data || !Array.isArray(data.products) || !data.products.length) throw new Error('empty feed');
     return data;
   } catch (err) {
