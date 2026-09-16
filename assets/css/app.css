@@ -539,6 +539,7 @@ input[type=file] { font-size: .85rem; }
 .cat-tile-label { margin-top: 12px; font-size: 1.05rem; font-weight: 700; }
 
 .grid-5 { grid-template-columns: repeat(5, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
 
 /* ------------------------------------------------------------------ footer */
 
@@ -555,7 +556,7 @@ input[type=file] { font-size: .85rem; }
   .head-inner { height: auto; flex-wrap: wrap; padding-top: 14px; padding-bottom: 14px; gap: 14px; }
   .search { order: 3; flex-basis: 100%; max-width: none; margin-left: 0; }
   .head-icons { margin-left: auto; }
-  .cat-tiles, .grid-5 { grid-template-columns: repeat(2, 1fr); }
+  .cat-tiles, .grid-5, .grid-3 { grid-template-columns: repeat(2, 1fr); }
   .cat-tile-img { height: 170px; }
 }
 

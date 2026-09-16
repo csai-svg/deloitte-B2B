@@ -126,6 +126,8 @@ function buyPanel() {
 
     colourPicker(),
 
+    P.brand ? el('p', { class: 'muted', style: 'margin-bottom:-6px' }, el('strong', {}, 'Brand: '), P.brand) : null,
+
     P.description ? el('p', { class: 'muted', style: 'white-space:pre-line' }, P.description) : null,
 
     (P.specs || []).length ? el('table', { class: 'spec-table' },

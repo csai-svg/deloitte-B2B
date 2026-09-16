@@ -18,8 +18,28 @@
   </div>
 
   <section class="home-sec">
+    <p class="muted" style="margin:0 0 6px;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Pre-made kits</p>
     <h2>Ready-made gift boxes</h2>
     <div class="grid grid-5" id="kits"></div>
+  </section>
+
+  <section class="home-sec">
+    <h2>Custom kit</h2>
+    <div class="panel">
+      <p class="muted" style="margin-top:0">Tell us your headcount and budget per person, and we'll put together a few kit options from the catalogue.</p>
+      <div class="row" style="gap:16px;flex-wrap:wrap;align-items:flex-end">
+        <label class="field" style="margin-bottom:0;max-width:180px">
+          <span>Employees</span>
+          <input type="number" min="1" step="1" id="kEmp" value="50">
+        </label>
+        <label class="field" style="margin-bottom:0;max-width:180px">
+          <span>Budget per person</span>
+          <input type="number" min="0" step="1" id="kBudget" value="1000">
+        </label>
+        <button class="btn" id="kGen" type="button">Generate kits</button>
+      </div>
+      <div id="kResult" style="margin-top:18px"></div>
+    </div>
   </section>
 
   <section class="home-sec">
@@ -48,7 +68,51 @@
   } else {
     host.append(...boxes.map(productCard));
   }
+
+  document.getElementById('kGen').addEventListener('click', generateCustomKits);
 })();
+
+/* One card per generated kit option: line items, per-employee cost, and an
+   add-to-cart action that puts `emp` units of every item in the kit into the
+   cart in one go. Sized products are left out of the pool entirely — a kit
+   has one quantity per item (the headcount), and a size split would need its
+   own picker per item, which the generator doesn't ask for. */
+function kitOptionCard(kit, emp, idx) {
+  return el('div', { class: 'panel', style: 'padding:16px' },
+    el('div', { class: 'row-between' },
+      el('h3', { style: 'margin:0' }, `Option ${idx + 1}`),
+      el('strong', { class: 'mono' }, money(kit.per) + ' / person')),
+    el('ul', { style: 'margin:10px 0;padding-left:18px' },
+      kit.items.map(p => el('li', { class: 'small' }, `${p.name} — ${money(unitAt(p, emp))} each`))),
+    el('div', { class: 'row-between', style: 'margin-top:10px' },
+      el('span', { class: 'muted small' }, `Total for ${qty(emp)} employees`),
+      el('strong', { class: 'mono' }, money(kit.per * emp))),
+    el('button', {
+      class: 'btn btn-block', style: 'margin-top:12px',
+      onclick: () => {
+        kit.items.forEach(p => Cart.add(p.sku, '', emp));
+        toast(`Option ${idx + 1} added to cart`);
+      },
+    }, 'Add this kit to cart'));
+}
+
+function generateCustomKits() {
+  const emp = Math.max(1, Math.floor(Number(document.getElementById('kEmp').value) || 0));
+  const budget = Math.max(0, Number(document.getElementById('kBudget').value) || 0);
+  const result = document.getElementById('kResult');
+  result.textContent = '';
+
+  const pool = kitEligible(
+    Catalog.allProducts.filter(p => p.category !== 'Gift Box' && !p.has_sizes), emp, budget);
+  const kits = buildKits(pool, emp, budget, 3);
+
+  if (!kits.length) {
+    result.append(el('p', { class: 'muted' },
+      'No combination fits that budget for this headcount — try raising the budget per person.'));
+    return;
+  }
+  result.append(el('div', { class: 'grid grid-3' }, kits.map((k, i) => kitOptionCard(k, emp, i))));
+}
 </script>
 </body>
 </html>
