@@ -943,9 +943,7 @@ function header(active) {
         el('a', { class: 'catnav-top nav-kit' + (active === 'Kit' ? ' on' : ''), href: 'kit.html' },
           'Build a Kit'),
         el('a', { class: 'catnav-top nav-kit' + (active === 'PresetKits' ? ' on' : ''), href: 'preset-kits.html' },
-          'Preset Kits'),
-        flyoutNavItem('Occasions', 'event-kits.html?event=' + EVENT_KIT_NAV[0][0],
-          EVENT_KIT_NAV, active === 'Occasions'))));
+          'Preset Kits'))));
 }
 
 /* The six curated occasions (New Joinee Program, Employee Recognition &
@@ -973,17 +971,6 @@ const EVENT_KIT_PICKS = {
   'sustainability': p => !!p.sustainable,
   'festive-gift-kits': p => p.category === 'Gift Box',
 };
-
-/* A hover flyout that is not tied to the product catalogue — same markup and
-   CSS as catnavItem's category dropdown (.catnav-item / .catnav-menu), just
-   fed a fixed list of (slug, label) pairs instead of subcategories. */
-function flyoutNavItem(label, href, items, on) {
-  return el('div', { class: 'catnav-item' },
-    el('a', { class: 'catnav-top' + (on ? ' on' : ''), href },
-      label, el('span', { class: 'caret' }, '˅')),
-    el('div', { class: 'catnav-menu' }, items.map(([slug, itemLabel]) =>
-      el('a', { href: 'event-kits.html?event=' + encodeURIComponent(slug) }, itemLabel))));
-}
 
 /* One category plus its subcategories. The subcategory list comes from the
    catalogue, so a new subcategory appears in the rail without a code change. */
@@ -1037,12 +1024,6 @@ function openMenu(active) {
 
       el('div', { class: 'menu-group' },
         el('a', { class: 'menu-cat' + (active === 'PresetKits' ? ' on' : ''), href: 'preset-kits.html' }, 'Preset Kits')),
-
-      el('div', { class: 'menu-group' },
-        el('span', { class: 'menu-cat' }, 'Occasions'),
-        EVENT_KIT_NAV.map(([slug, label]) => el('a', {
-          class: 'menu-sub', href: 'event-kits.html?event=' + encodeURIComponent(slug),
-        }, label))),
 
       ));
 
