@@ -686,3 +686,11 @@ input[type=file] { font-size: .85rem; }
   border-radius: var(--radius); padding: 16px 18px; margin: 4px 0 8px;
 }
 .poa-panel strong { display: block; font-size: 1.15rem; margin-bottom: 4px; }
+
+/* ------------------------------------------------- event-kit pages */
+.ek-hero { border-radius: var(--radius); overflow: hidden; background: var(--off); margin-bottom: 18px; }
+.ek-hero img { display: block; width: 100%; height: auto; max-height: 420px; object-fit: cover; }
+.ek-gallery { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.ek-shot { display: block; border-radius: var(--radius); overflow: hidden; background: var(--off); }
+.ek-shot img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+@media (max-width: 900px) { .ek-gallery { grid-template-columns: repeat(2, 1fr); } }

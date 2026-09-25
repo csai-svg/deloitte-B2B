@@ -31,6 +31,29 @@ sheet-seed/     CSVs to paste into the Sheet tabs
 tools/          build + test scripts (not deployed)
 ```
 
+## Refreshing the catalogue
+
+`assets/products.json` is a snapshot of the Apps Script feed. The storefront
+paints from it on first load and only swaps in the live feed on the *next*
+navigation, so a stale snapshot means first-time visitors never see newly
+published products. After any change to the master sheet:
+
+```
+python3 scripts/build_catalog.py     # rewrites assets/products.json from the feed
+```
+
+Two hand-maintained files are layered on top of the snapshot client-side and
+are not overwritten by that command:
+
+| file | what it overrides |
+|---|---|
+| `assets/taxonomy.json` | per-SKU category/subcategory, beating the classify_ regexes in `apps-script-feed/Code.gs` |
+| `assets/colorways.json` | curated colour groups; members may be a CS#### SKU or the sheet's `parent_sku` vendor code |
+
+A new SKU with no taxonomy entry falls back to the feed's regex guess, which is
+wrong often enough (a sling matching `/bottle/` off its description) that new
+products should get an entry here.
+
 ## Catalogue figures
 
 | | |

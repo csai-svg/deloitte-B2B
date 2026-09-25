@@ -70,17 +70,21 @@ let P = null;
 function colourPicker() {
   const cw = P.colorway;
   if (!cw || cw.siblings.length < 2) return null;
+  /* An auto-grouped variant set (same name, same photo, different vendor code)
+     carries no colour data, so it gets SKU links instead of colour swatches —
+     naming a colour we were never given would be a guess on a live order. */
+  const isVariant = cw.kind === 'variant';
   return el('div', {},
-    el('h3', {}, 'Colour'),
+    el('h3', {}, isVariant ? 'Variants' : 'Colour'),
     el('div', { class: 'swatch-row' }, cw.siblings.map(s =>
       el('a', {
         class: 'swatch-link' + (s.sku === P.sku ? ' on' : ''),
         href: 'product.html?sku=' + encodeURIComponent(s.sku),
-        title: s.color + ' — ' + s.sku,
+        title: (s.color ? s.color + ' — ' : '') + s.sku,
         'aria-current': s.sku === P.sku ? 'true' : null,
       },
-        el('span', { class: 'swatch', style: 'background:' + s.swatch }),
-        el('span', { class: 'swatch-name' }, s.color)))));
+        isVariant ? null : el('span', { class: 'swatch', style: 'background:' + s.swatch }),
+        el('span', { class: 'swatch-name' }, s.color || s.sku)))));
 }
 
 function paintRelated() {

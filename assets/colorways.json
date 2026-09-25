@@ -1,13 +1,21 @@
 {
-  "_note": "Colourway groups. Several products in the catalogue are the same style in different colours but were exported as separate SKUs with identical names, so they showed up as duplicate listings. Each group collapses to ONE card in listings (the `primary`); the product page shows swatches that switch between the members. Each colour keeps its own SKU, price, MOQ and stock — nothing about ordering changes. Colours were read off the product photography on 2026-09-04 and confirmed by the user. Add a group here rather than editing the sheet: this file survives an Apps Script republish of products.json.",
+  "_note": "Colourway groups. Several products in the catalogue are the same style in different colours but were exported as separate SKUs with identical names, so they showed up as duplicate listings. Each group collapses to ONE card in listings (the `primary`); the product page shows swatches that switch between the members. Each colour keeps its own SKU, price, MOQ and stock — nothing about ordering changes. Add a group here rather than editing the sheet: this file survives an Apps Script republish of products.json. MEMBER IDs: either the storefront SKU (CS0244) or the vendor code the sheet publishes as `parent_sku` (CSUN-0277, OBLI-102) — findBySku_ in app.js resolves both, so a group survives a re-export that renumbers CS####. STATUS 2026-09-25: all three groups below are DORMANT — the beanie, lanyard and ET-TU hoodie were dropped from the sheet and no longer appear in the feed, so these groups currently match nothing. They are kept in case those styles return. Styles the sheet now lists more than once with the same name and the same photo (SOIL Classic Journal, OMG Full Zip Swag Jacket, OMG Surry Sweatshirt) carry no colour data at all and are grouped automatically by groupVariants() in app.js; give them real swatches here once the colours are confirmed.",
   "groups": [
     {
       "id": "beanie-cap",
       "label": "Beanie Cap",
       "primary": "CSUN-3478",
       "members": [
-        { "sku": "CSUN-3478", "color": "Oatmeal",  "swatch": "#E7DFD1" },
-        { "sku": "CSUN-0698", "color": "Charcoal", "swatch": "#3F4246" }
+        {
+          "sku": "CSUN-3478",
+          "color": "Oatmeal",
+          "swatch": "#E7DFD1"
+        },
+        {
+          "sku": "CSUN-0698",
+          "color": "Charcoal",
+          "swatch": "#3F4246"
+        }
       ]
     },
     {
@@ -15,9 +23,21 @@
       "label": "Custom Full Color Lanyard",
       "primary": "CSUN-0306",
       "members": [
-        { "sku": "CSUN-0306", "color": "Black",  "swatch": "#1C1C1E" },
-        { "sku": "CSUN-3417", "color": "White",  "swatch": "#F4F4F5" },
-        { "sku": "CSUN-3584", "color": "Yellow", "swatch": "#E9B321" }
+        {
+          "sku": "CSUN-0306",
+          "color": "Black",
+          "swatch": "#1C1C1E"
+        },
+        {
+          "sku": "CSUN-3417",
+          "color": "White",
+          "swatch": "#F4F4F5"
+        },
+        {
+          "sku": "CSUN-3584",
+          "color": "Yellow",
+          "swatch": "#E9B321"
+        }
       ]
     },
     {
@@ -25,7 +45,11 @@
       "label": "ET-TU Unisex Recycled No Zip Hoodie",
       "primary": "CSUN-1538",
       "members": [
-        { "sku": "CSUN-1538", "color": "Black", "swatch": "#1C1C1E" },
+        {
+          "sku": "CSUN-1538",
+          "color": "Black",
+          "swatch": "#1C1C1E"
+        },
         {
           "sku": "CSUN-3440",
           "color": "",

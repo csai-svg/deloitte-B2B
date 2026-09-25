@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Kits | Deloitte Merchandise Store</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<main class="wrap">
+  <div class="page-head">
+    <h1 id="title">Kits</h1>
+    <p class="muted" id="blurb"></p>
+  </div>
+
+  <section class="home-sec">
+    <div class="ek-hero" id="hero" hidden></div>
+    <div class="ek-gallery" id="gallery"></div>
+  </section>
+
+  <section class="home-sec" id="picksSec" hidden>
+    <div class="page-head"><h2 id="picksTitle">From the catalogue</h2></div>
+    <div class="grid" id="picks"></div>
+  </section>
+
+  <div class="empty" id="brief" hidden>
+    <h2>Assembled to brief</h2>
+    <p>These kits are put together with your team for each programme. Start from
+       <a href="kit.html">Build a Kit</a>, or browse <a href="preset-kits.html">Preset Kits</a>.</p>
+  </div>
+</main>
+
+<script src="assets/js/app.js"></script>
+<script>
+(async function () {
+  await Catalog.load();
+
+  const slug = param('event');
+  const label = eventKitLabel(slug);
+
+  /* An unknown ?event= is a bad link, not an empty kit: send the visitor to
+     the first occasion rather than rendering a blank page. */
+  if (!label) { location.replace('event-kits.html?event=' + EVENT_KIT_NAV[0][0]); return; }
+
+  const onGifting = GIFTING_NAV.some(x => x[0] === slug);
+  mount(onGifting ? 'Gifting' : 'Occasions');
+  document.title = label + ' | Deloitte Merchandise Store';
+  document.getElementById('title').textContent = label;
+
+  /* Kit photography, keyed by the same slug the nav uses. Published from
+     Google Drive by tools/build_kit_media.py — see assets/kits/kits.json. */
+  const media = await fetch('assets/kits/kits.json')
+    .then(r => r.ok ? r.json() : { kits: {} })
+    .catch(() => ({ kits: {} }));
+  const kit = (media.kits || {})[slug] || {};
+
+  if (kit.hero) {
+    const hero = document.getElementById('hero');
+    hero.hidden = false;
+    hero.append(el('img', { src: kit.hero, alt: label, loading: 'eager' }));
+  }
+  const gallery = kit.gallery || [];
+  document.getElementById('gallery').append(...gallery.map(g =>
+    el('a', { class: 'ek-shot', href: g.src, target: '_blank', rel: 'noopener' },
+      el('img', { src: g.thumb || g.src, alt: g.file || label, loading: 'lazy' }))));
+
+  /* Only occasions the catalogue can actually answer get a product grid —
+     EVENT_KIT_PICKS holds those rules. The rest show the photography and the
+     Build-a-Kit route instead of a made-up shortlist. */
+  const rule = EVENT_KIT_PICKS[slug];
+  const picks = rule ? Catalog.products.filter(rule) : [];
+
+  if (picks.length) {
+    document.getElementById('picksSec').hidden = false;
+    document.getElementById('picksTitle').textContent =
+      'From the catalogue (' + qty(picks.length) + ')';
+    document.getElementById('picks').append(...picks.map(productCard));
+  } else {
+    document.getElementById('brief').hidden = false;
+  }
+
+  document.getElementById('blurb').textContent = picks.length
+    ? 'Pick from the catalogue below, or build the whole kit in Build a Kit.'
+    : '';
+})();
+</script>
+</body>
+</html>

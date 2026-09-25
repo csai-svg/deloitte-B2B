@@ -238,7 +238,7 @@ function regroupCatalogue(data, taxonomy) {
 }
 
 /* ------------------------------------------------------------------
-   Colourways
+   Colourways and variants
    Some styles ship as one SKU per colour, exported with identical
    product names — so the storefront showed the same lanyard three
    times. assets/colorways.json groups those SKUs; listings then show
@@ -247,13 +247,21 @@ function regroupCatalogue(data, taxonomy) {
    MOQ and stock, so nothing about ordering changes. A member marked
    needs_image is held out of listings and gets no swatch until real
    photography lands.
+
+   colorways.json identifies members by the vendor code the sheet
+   publishes as `parent_sku` (CSUN-3478, OBLI-102, ...), NOT by the
+   generated CS#### storefront SKU — the two namespaces are different
+   and looking a member up by `sku` alone silently matched nothing,
+   which is why every curated group quietly stopped applying. findBySku_
+   accepts either, so a group keeps working across a re-export that
+   renumbers CS####.
    ------------------------------------------------------------------ */
 function applyColorways(data, groups) {
   const primary = new Set();
   const hidden = new Set();
 
   for (const g of groups || []) {
-    const members = (g.members || []).filter(m => Catalogish(data, m.sku));
+    const members = (g.members || []).filter(m => findBySku_(data, m.sku));
     if (members.length < 2) continue;
     const head = members.find(m => m.sku === g.primary) || members[0];
     primary.add(head.sku);
@@ -261,29 +269,66 @@ function applyColorways(data, groups) {
     /* swatch-worthy members only: one still awaiting photography has no
        colour to show, so it is reachable by URL but not advertised */
     const shown = members.filter(m => m.color && !m.needs_image);
+    /* siblings are linked by storefront SKU — that is what product.html?sku=
+       resolves — even though the group names them by vendor code */
+    const skuOf = ref => findBySku_(data, ref).sku;
     for (const m of members) {
-      const p = Catalogish(data, m.sku);
+      const p = findBySku_(data, m.sku);
       const label = g.label || p.name;
       p.colorway = {
         group: g.id,
+        kind: 'colour',
         label: label,
         color: m.color || '',
         needs_image: !!m.needs_image,
-        siblings: shown.map(x => ({ sku: x.sku, color: x.color, swatch: x.swatch })),
+        siblings: shown.map(x => ({ sku: skuOf(x.sku), color: x.color, swatch: x.swatch })),
       };
       /* The export gave every colour the same name — all three lanyards read
          "- Black". Rebuild the name from the group label plus this member's
          actual colour so the yellow one does not claim to be black. (This is
          also where the group label quietly fixes the "Hooodie" typo.) */
       p.name = m.color ? label + ' - ' + m.color : label;
-      if (m.sku !== head.sku) hidden.add(m.sku);
+      if (m.sku !== head.sku) hidden.add(p.sku);
     }
   }
   return data.products.filter(p => !hidden.has(p.sku));
 }
 
-function Catalogish(data, sku) {
-  return data.products.find(p => p.sku === sku);
+/* The sheet also re-lists one style as several rows with the SAME name and the
+   SAME photo but different vendor parent codes (three "SOIL Classic Journal"
+   rows, two "OMG Full Zip Swag Jacket" rows). Nothing in the export says which
+   colour each one is, so they cannot be given swatches — but shipping three
+   identical cards is worse. These collapse to one listing card labelled
+   "N variants"; every SKU stays reachable and is listed on the product page.
+   Runs only over products no curated colorways.json group already claimed. */
+function groupVariants(data, listing) {
+  const key = p => (p.name || '').toLowerCase().replace(/\s+/g, ' ').trim() +
+                   '|' + (p.brand || '') + '|' + (p.image || '');
+  const buckets = new Map();
+  for (const p of listing) {
+    if (p.colorway) continue;
+    const k = key(p);
+    if (!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k).push(p);
+  }
+  const hidden = new Set();
+  for (const group of buckets.values()) {
+    if (group.length < 2) continue;
+    const siblings = group.map(p => ({ sku: p.sku, color: '', swatch: '' }));
+    for (const p of group) {
+      p.colorway = { group: 'variants:' + p.sku, kind: 'variant', label: p.name,
+                     color: '', needs_image: false, siblings: siblings };
+    }
+    group.slice(1).forEach(p => hidden.add(p.sku));
+  }
+  return listing.filter(p => !hidden.has(p.sku));
+}
+
+/* Resolves a catalogue reference that may be a storefront SKU (CS0244) or the
+   vendor code the sheet publishes as parent_sku (CSUN-0277). */
+function findBySku_(data, ref) {
+  return data.products.find(p => p.sku === ref) ||
+         data.products.find(p => p.parent_sku && p.parent_sku === ref);
 }
 
 /* Neutral placeholder shown until real product photography is supplied. */
@@ -369,7 +414,7 @@ const Catalog = {
     /* bySku indexes EVERY product, including colours hidden from listings,
        so a direct product.html?sku=... link always resolves */
     this._bySku = Object.fromEntries(this._data.products.map(p => [p.sku, p]));
-    this._listing = applyColorways(this._data, cw.groups);
+    this._listing = groupVariants(this._data, applyColorways(this._data, cw.groups));
     return this._data;
   },
   /* what listings show: one card per colourway */
@@ -894,7 +939,11 @@ function header(active) {
         el('a', { class: 'catnav-top nav-kit' + (active === 'Kit' ? ' on' : ''), href: 'kit.html' },
           'Build a Kit'),
         el('a', { class: 'catnav-top nav-kit' + (active === 'PresetKits' ? ' on' : ''), href: 'preset-kits.html' },
-          'Preset Kits'))));
+          'Preset Kits'),
+        flyoutNavItem('Occasions', 'event-kits.html?event=' + EVENT_KIT_NAV[0][0],
+          EVENT_KIT_NAV, active === 'Occasions'),
+        flyoutNavItem('Gifting', 'event-kits.html?event=' + GIFTING_NAV[0][0],
+          GIFTING_NAV, active === 'Gifting'))));
 }
 
 /* The six curated occasions (New Joinee Program, Employee Recognition &
@@ -913,6 +962,20 @@ const GIFTING_NAV = [
   ['cxo-gifting', 'CXO Gifting'],
   ['executive-gifting', 'Executive Gifting'],
 ];
+
+const ALL_KIT_NAV = EVENT_KIT_NAV.concat(GIFTING_NAV);
+const eventKitLabel = slug => (ALL_KIT_NAV.find(x => x[0] === slug) || [])[1] || '';
+
+/* Which catalogue products an occasion page lists. Only rules the catalogue
+   data actually supports are declared here: `sustainability` reads the sheet's
+   Sustainable column, `festive-gift-kits` reads the Gift Box category. The
+   other occasions are assembled to brief and have no column to filter on, so
+   their pages show the kit photography and send the visitor to Build a Kit
+   rather than inventing a shortlist. Add a rule here when curation lands. */
+const EVENT_KIT_PICKS = {
+  'sustainability': p => !!p.sustainable,
+  'festive-gift-kits': p => p.category === 'Gift Box',
+};
 
 /* A hover flyout that is not tied to the product catalogue — same markup and
    CSS as catnavItem's category dropdown (.catnav-item / .catnav-menu), just
@@ -978,6 +1041,18 @@ function openMenu(active) {
       el('div', { class: 'menu-group' },
         el('a', { class: 'menu-cat' + (active === 'PresetKits' ? ' on' : ''), href: 'preset-kits.html' }, 'Preset Kits')),
 
+      el('div', { class: 'menu-group' },
+        el('span', { class: 'menu-cat' }, 'Occasions'),
+        EVENT_KIT_NAV.map(([slug, label]) => el('a', {
+          class: 'menu-sub', href: 'event-kits.html?event=' + encodeURIComponent(slug),
+        }, label))),
+
+      el('div', { class: 'menu-group' },
+        el('span', { class: 'menu-cat' }, 'Gifting'),
+        GIFTING_NAV.map(([slug, label]) => el('a', {
+          class: 'menu-sub', href: 'event-kits.html?event=' + encodeURIComponent(slug),
+        }, label))),
+
       ));
 
   const shade = el('div', {
@@ -1033,7 +1108,8 @@ function productCard(p) {
         (p.colorway && p.colorway.siblings.length > 1) ? p.colorway.label : p.name),
       p.has_sizes ? el('div', { class: 'tag' }, p.sizes.length + ' sizes') : null,
       (p.colorway && p.colorway.siblings.length > 1)
-        ? el('div', { class: 'tag' }, p.colorway.siblings.length + ' colours') : null,
+        ? el('div', { class: 'tag' }, p.colorway.siblings.length +
+            (p.colorway.kind === 'variant' ? ' variants' : ' colours')) : null,
       el('div', { class: 'card-moq' }, 'MOQ ' + qty(p.moq)),
       hasPrice(p)
         ? el('div', { class: 'card-price' },
