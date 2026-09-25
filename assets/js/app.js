@@ -729,12 +729,18 @@ const Filters = {
     const section = (title, body) => el('div', { class: 'rail-sec' },
       el('h3', { class: 'rail-title' }, title), body);
 
-    const tagChips = tags.length
-      ? el('div', { class: 'rail-chips' }, tags.map(t => el('button', {
-          class: 'chip' + (s.tag === t ? ' on' : ''), type: 'button',
-          onclick: () => { s.tag = s.tag === t ? '' : t; repaint(); fireNow(); },
-        }, t)))
-      : el('p', { class: 'muted small' }, 'No tags yet');
+    const highlightChip = (label, key) => el('button', {
+      class: 'chip' + (s[key] ? ' on' : ''), type: 'button',
+      onclick: () => { s[key] = !s[key]; repaint(); fireNow(); },
+    }, label);
+
+    const tagChips = el('div', { class: 'rail-chips' },
+      highlightChip('Deloitte Top Selling', 'topSelling'),
+      highlightChip('Sustainable', 'sustainable'),
+      ...tags.map(t => el('button', {
+        class: 'chip' + (s.tag === t ? ' on' : ''), type: 'button',
+        onclick: () => { s.tag = s.tag === t ? '' : t; repaint(); fireNow(); },
+      }, t)));
 
     const brandList = brands.length
       ? el('div', { class: 'rail-list' }, brands.map(b => el('label', { class: 'rail-check' },
@@ -1019,7 +1025,10 @@ function productCard(p) {
   return el('a', { class: 'card', href: 'product.html?sku=' + encodeURIComponent(p.sku) },
     el('div', { class: 'card-img' }, el('img', { src: imgAt(p.image, 400), alt: p.name, loading: 'lazy' })),
     el('div', { class: 'card-body' },
-      el('div', { class: 'card-sku' }, p.sku),
+      el('div', { class: 'card-sku' }, p.brand || ''),
+      (p.top_selling || p.sustainable) ? el('div', { class: 'card-badges' },
+        p.top_selling ? el('span', { class: 'badge badge-top' }, 'Top Selling') : null,
+        p.sustainable ? el('span', { class: 'badge badge-sustainable' }, 'Sustainable') : null) : null,
       el('div', { class: 'card-name' },
         (p.colorway && p.colorway.siblings.length > 1) ? p.colorway.label : p.name),
       p.has_sizes ? el('div', { class: 'tag' }, p.sizes.length + ' sizes') : null,

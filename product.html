@@ -121,7 +121,7 @@ function buyPanel() {
 
   return el('div', { class: 'stack' },
     el('div', {},
-      el('div', { class: 'card-sku' }, P.sku),
+      el('div', { class: 'card-sku' }, P.parent_sku || P.sku),
       el('h1', {}, P.name)),
 
     colourPicker(),

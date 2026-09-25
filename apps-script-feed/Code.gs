@@ -38,13 +38,21 @@ var CFG = {
   CACHE_SECS: 60,
 };
 
-/* Header-name -> column finder (tolerant: trims, lowercases, ignores spaces). */
+/* Header-name -> column finder (tolerant: trims, lowercases, ignores spaces).
+   Falls back to a prefix match when nothing matches exactly, so a header cell
+   with extra explanatory text tacked on (e.g. "Product name\n( Brand+Product
+   Name+ Colour)") still resolves — a blank match here means every row's name
+   comes back empty and the whole catalogue silently disappears, which is far
+   worse than matching a slightly-decorated header. */
 function colMap_(header) {
   var m = {};
   header.forEach(function (h, i) { m[String(h).toLowerCase().replace(/\s+/g, ' ').trim()] = i; });
+  var keys = Object.keys(m);
   return function (name) {
     var k = name.toLowerCase().replace(/\s+/g, ' ').trim();
-    return (k in m) ? m[k] : -1;
+    if (k in m) return m[k];
+    for (var i = 0; i < keys.length; i++) if (keys[i].indexOf(k) === 0) return m[keys[i]];
+    return -1;
   };
 }
 
@@ -136,7 +144,7 @@ function buildCatalog_(brand) {
     name: C('product name'), brand: C('brand'), desc: C('description'), gender: C('style(gender)'),
     tax: C('tax'), moq: C('moq'), sr: C('sr no'), img: C('image url'),
     t1: C('b2b moq price upto 100'), t2: C('100-200'), t3: C('200-500'), t4: C('500-1000'), t5: C('1000+'),
-    topSelling: C('top selling'), sustainable: C('sustainable'),
+    topSelling: C('top selling'), sustainable: C('sustainable'), parentSku: C('sku codes - parent'),
   };
   var yes_ = function (v) { return /^\s*(y|yes|true|1)\s*$/i.test(String(v || '')); };
   var BANDS = [[ci.t1, 20, 100], [ci.t2, 101, 200], [ci.t3, 201, 500], [ci.t4, 501, 1000], [ci.t5, 1001, null]];
@@ -166,6 +174,7 @@ function buildCatalog_(brand) {
       event_tags: cat === 'Gift Box' ? ['kit'] : [],
       top_selling: ci.topSelling >= 0 ? yes_(row[ci.topSelling]) : false,
       sustainable: ci.sustainable >= 0 ? yes_(row[ci.sustainable]) : false,
+      parent_sku: ci.parentSku >= 0 ? String(row[ci.parentSku] || '').trim() : '',
     });
   }
   return {
