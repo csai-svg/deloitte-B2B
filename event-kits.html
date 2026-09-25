@@ -46,8 +46,7 @@
      the first occasion rather than rendering a blank page. */
   if (!label) { location.replace('event-kits.html?event=' + EVENT_KIT_NAV[0][0]); return; }
 
-  const onGifting = GIFTING_NAV.some(x => x[0] === slug);
-  mount(onGifting ? 'Gifting' : 'Occasions');
+  mount('Occasions');
   document.title = label + ' | Deloitte Merchandise Store';
   document.getElementById('title').textContent = label;
 

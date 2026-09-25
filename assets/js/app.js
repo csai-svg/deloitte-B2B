@@ -300,7 +300,11 @@ function applyColorways(data, groups) {
    colour each one is, so they cannot be given swatches — but shipping three
    identical cards is worse. These collapse to one listing card labelled
    "N variants"; every SKU stays reachable and is listed on the product page.
-   Runs only over products no curated colorways.json group already claimed. */
+   Runs only over products no curated colorways.json group already claimed.
+
+   This is keyed on the name, so it dissolves by itself: the moment the sheet
+   gives those rows distinct names they stop matching and go back to being
+   separate cards. Nothing here needs undoing when that lands. */
 function groupVariants(data, listing) {
   const key = p => (p.name || '').toLowerCase().replace(/\s+/g, ' ').trim() +
                    '|' + (p.brand || '') + '|' + (p.image || '');
@@ -941,37 +945,30 @@ function header(active) {
         el('a', { class: 'catnav-top nav-kit' + (active === 'PresetKits' ? ' on' : ''), href: 'preset-kits.html' },
           'Preset Kits'),
         flyoutNavItem('Occasions', 'event-kits.html?event=' + EVENT_KIT_NAV[0][0],
-          EVENT_KIT_NAV, active === 'Occasions'),
-        flyoutNavItem('Gifting', 'event-kits.html?event=' + GIFTING_NAV[0][0],
-          GIFTING_NAV, active === 'Gifting'))));
+          EVENT_KIT_NAV, active === 'Occasions'))));
 }
 
 /* The six curated occasions (New Joinee Program, Employee Recognition &
    Rewards, ...) and the two gifting tiers are fixed nav content, not read
    off the catalogue — a kit can exist with zero products in it while the
    pre-generated images and copy are still being supplied. */
+/* The two occasions the catalogue can actually answer, and nothing else.
+   assets/kits/kits.json still carries photography for six more (New Joinee
+   Program, Employee Recognition, New Mom & Baby, Personal Milestone, CXO and
+   Executive Gifting) but the sheet has no column that says which products
+   belong to any of them, so they are not in the nav: a page that can only show
+   stock photography and a Build-a-Kit link is not a kit. Add one back here
+   together with its rule in EVENT_KIT_PICKS, never on its own. */
 const EVENT_KIT_NAV = [
-  ['new-joinee-program', 'New Joinee Program'],
-  ['employee-recognition-rewards', 'Employee Recognition & Rewards'],
-  ['new-mom-baby-kit', 'New Mom & Baby Kit'],
   ['sustainability', 'Sustainability'],
   ['festive-gift-kits', 'Festive Gift Kits'],
-  ['personal-milestone', 'Personal Milestone'],
-];
-const GIFTING_NAV = [
-  ['cxo-gifting', 'CXO Gifting'],
-  ['executive-gifting', 'Executive Gifting'],
 ];
 
-const ALL_KIT_NAV = EVENT_KIT_NAV.concat(GIFTING_NAV);
-const eventKitLabel = slug => (ALL_KIT_NAV.find(x => x[0] === slug) || [])[1] || '';
+const eventKitLabel = slug => (EVENT_KIT_NAV.find(x => x[0] === slug) || [])[1] || '';
 
-/* Which catalogue products an occasion page lists. Only rules the catalogue
-   data actually supports are declared here: `sustainability` reads the sheet's
-   Sustainable column, `festive-gift-kits` reads the Gift Box category. The
-   other occasions are assembled to brief and have no column to filter on, so
-   their pages show the kit photography and send the visitor to Build a Kit
-   rather than inventing a shortlist. Add a rule here when curation lands. */
+/* How each occasion above picks its products: `sustainability` reads the
+   sheet's Sustainable column, `festive-gift-kits` reads the Gift Box category.
+   Every slug in EVENT_KIT_NAV must have a rule here. */
 const EVENT_KIT_PICKS = {
   'sustainability': p => !!p.sustainable,
   'festive-gift-kits': p => p.category === 'Gift Box',
@@ -1044,12 +1041,6 @@ function openMenu(active) {
       el('div', { class: 'menu-group' },
         el('span', { class: 'menu-cat' }, 'Occasions'),
         EVENT_KIT_NAV.map(([slug, label]) => el('a', {
-          class: 'menu-sub', href: 'event-kits.html?event=' + encodeURIComponent(slug),
-        }, label))),
-
-      el('div', { class: 'menu-group' },
-        el('span', { class: 'menu-cat' }, 'Gifting'),
-        GIFTING_NAV.map(([slug, label]) => el('a', {
           class: 'menu-sub', href: 'event-kits.html?event=' + encodeURIComponent(slug),
         }, label))),
 
