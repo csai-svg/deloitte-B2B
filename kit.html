@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>Build a kit | Deloitte Merchandise Store</title>
+<title>Build a Kit | Deloitte Merchandise Store</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -13,18 +13,9 @@
 <body>
 <main class="wrap">
   <div class="page-head">
-    <h1>Build a kit</h1>
-    <p class="muted">Choose a ready-made gift box, or add any products to your cart to assemble your own. When you’re done, submit the cart as a request and our team takes it from there — no payment, no sign-in.</p>
+    <h1>Build a Kit</h1>
+    <p class="muted">Tell us your headcount and budget, or add any products to your cart to assemble your own. Looking for something already put together? Check out <a href="preset-kits.html">Preset Kits</a>. When you’re done, submit the cart as a request and our team takes it from there — no payment, no sign-in.</p>
   </div>
-
-  <section class="home-sec">
-    <p class="muted" style="margin:0 0 6px;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Pre-made kits</p>
-    <h2>Ready-made gift boxes</h2>
-    <div class="grid" id="kits"></div>
-    <div class="row" style="justify-content:center;margin-top:18px">
-      <button class="btn btn-ghost" id="kitsMore" type="button" hidden>See more</button>
-    </div>
-  </section>
 
   <section class="home-sec">
     <h2>Custom kit</h2>
@@ -64,26 +55,6 @@
 (async function () {
   await Catalog.load();
   mount('Kit');
-  const boxes = Catalog.allProducts.filter(p => p.category === 'Gift Box');
-  const host = document.getElementById('kits');
-  const moreBtn = document.getElementById('kitsMore');
-  const INITIAL = 4;
-  if (!boxes.length) {
-    host.replaceWith(el('p', { class: 'muted' }, 'Gift boxes are being added — check back soon.'));
-    moreBtn.remove();
-  } else {
-    const cards = boxes.map(productCard);
-    host.append(...cards);
-    if (cards.length > INITIAL) {
-      cards.slice(INITIAL).forEach(c => c.classList.add('hidden'));
-      moreBtn.hidden = false;
-      moreBtn.addEventListener('click', () => {
-        cards.slice(INITIAL).forEach(c => c.classList.remove('hidden'));
-        moreBtn.hidden = true;
-      });
-    }
-  }
-
   document.getElementById('kGen').addEventListener('click', generateCustomKits);
 })();
 

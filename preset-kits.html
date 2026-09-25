@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Preset kits | Deloitte Merchandise Store</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<main class="wrap">
+  <div class="page-head">
+    <h1>Preset kits</h1>
+    <p class="muted">Ready-made gift boxes, already put together. Add one to your cart, or head to Build a Kit to put together your own.</p>
+  </div>
+
+  <section class="home-sec">
+    <div class="grid" id="kits"></div>
+    <div class="row" style="justify-content:center;margin-top:18px">
+      <button class="btn btn-ghost" id="kitsMore" type="button" hidden>See more</button>
+    </div>
+  </section>
+</main>
+
+<script src="assets/js/app.js"></script>
+<script>
+(async function () {
+  await Catalog.load();
+  mount('PresetKits');
+  const boxes = Catalog.allProducts.filter(p => p.category === 'Gift Box');
+  const host = document.getElementById('kits');
+  const moreBtn = document.getElementById('kitsMore');
+  const INITIAL = 4;
+  if (!boxes.length) {
+    host.replaceWith(el('p', { class: 'muted' }, 'Gift boxes are being added — check back soon.'));
+    moreBtn.remove();
+  } else {
+    const cards = boxes.map(productCard);
+    host.append(...cards);
+    if (cards.length > INITIAL) {
+      cards.slice(INITIAL).forEach(c => c.classList.add('hidden'));
+      moreBtn.hidden = false;
+      moreBtn.addEventListener('click', () => {
+        cards.slice(INITIAL).forEach(c => c.classList.remove('hidden'));
+        moreBtn.hidden = true;
+      });
+    }
+  }
+})();
+</script>
+</body>
+</html>

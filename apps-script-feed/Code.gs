@@ -32,9 +32,9 @@
 */
 
 var CFG = {
-  DEFAULT_BRAND: 'Optum',            // used only if a caller omits ?brand= / body.brand
-  CATALOG_SHEET: 'Main Catalogue',   // tab name of the shared catalogue (edit to match)
-  TOKEN: '',                         // optional shared secret; '' = open
+  DEFAULT_BRAND: 'Optum',              // used only if a caller omits ?brand= / body.brand
+  CATALOG_SHEET: 'Product Collection', // tab name of the shared catalogue (edit to match)
+  TOKEN: '',                           // optional shared secret; '' = open
   CACHE_SECS: 60,
 };
 
@@ -136,7 +136,9 @@ function buildCatalog_(brand) {
     name: C('product name'), brand: C('brand'), desc: C('description'), gender: C('style(gender)'),
     tax: C('tax'), moq: C('moq'), sr: C('sr no'), img: C('image url'),
     t1: C('b2b moq price upto 100'), t2: C('100-200'), t3: C('200-500'), t4: C('500-1000'), t5: C('1000+'),
+    topSelling: C('top selling'), sustainable: C('sustainable'),
   };
+  var yes_ = function (v) { return /^\s*(y|yes|true|1)\s*$/i.test(String(v || '')); };
   var BANDS = [[ci.t1, 20, 100], [ci.t2, 101, 200], [ci.t3, 201, 500], [ci.t4, 501, 1000], [ci.t5, 1001, null]];
   var products = [];
   for (var r = 1; r < vals.length; r++) {
@@ -162,6 +164,8 @@ function buildCatalog_(brand) {
       tiers: tiers, base_price: tiers.length ? tiers[0].unit_price : 0, sizes: ['OS'], has_sizes: false,
       image: ci.img >= 0 ? String(row[ci.img] || '').trim() : '', active: true, related: [],
       event_tags: cat === 'Gift Box' ? ['kit'] : [],
+      top_selling: ci.topSelling >= 0 ? yes_(row[ci.topSelling]) : false,
+      sustainable: ci.sustainable >= 0 ? yes_(row[ci.sustainable]) : false,
     });
   }
   return {
@@ -212,47 +216,61 @@ function doPost(e) {
 }
 
 /* ------------------------------------------------------------------
-   ONE-OFF: migrate the Image URL column off Google Drive onto the
-   shared static host (github.com/csai-svg/B2B-assets, published via
-   GitHub Pages). Run this ONCE from the Apps Script editor (select
-   migrateImageUrls in the function dropdown > Run) after confirming
-   MANIFEST_URL below actually resolves — it will prompt for URL-fetch
-   authorization the first time. Safe to re-run: it only overwrites a
-   row when the manifest has that SKU, and does nothing to any other
-   column. Does NOT touch classify_/buildCatalog_ — they keep reading
-   whatever ends up in the Image URL column, verbatim, same as today.
-   ------------------------------------------------------------------ */
-var MANIFEST_URL = 'https://csai-svg.github.io/B2B-assets/manifest.json';
+   ONE-OFF: point the Image URL column straight at Google Drive thumbnails
+   (drive.google.com/thumbnail?id=<fileId>&sz=w1000) instead of the old
+   static-host copies (github.com/csai-svg/B2B-assets). Sources the mapping
+   from the "ImageMigrationReview" tab in this same spreadsheet — columns
+   Status, Row, SrNo, ProductName, DriveFile, NewURL — and only applies
+   rows marked "MATCHED". Run this ONCE from the Apps Script editor (select
+   migrateImageUrlsToDrive in the function dropdown > Run). Safe to re-run:
+   only overwrites a row when its Sr No has a MATCHED entry. Does NOT touch
+   classify_/buildCatalog_ — they keep reading whatever ends up in the
+   Image URL column, verbatim, same as today. */
+var IMAGE_REVIEW_SHEET = 'ImageMigrationReview';
 
-function migrateImageUrls() {
-  var manifest = JSON.parse(UrlFetchApp.fetch(MANIFEST_URL).getContentText());
-
+function migrateImageUrlsToDrive() {
   var ss = SpreadsheetApp.getActive();
+  var reviewSh = ss.getSheetByName(IMAGE_REVIEW_SHEET);
+  if (!reviewSh) throw new Error('migrateImageUrlsToDrive: no "' + IMAGE_REVIEW_SHEET + '" tab found');
+  var reviewVals = reviewSh.getDataRange().getValues();
+  var reviewC = colMap_(reviewVals[0]);
+  var rci = { status: reviewC('status'), sr: reviewC('srno'), url: reviewC('newurl') };
+  if (rci.status < 0 || rci.sr < 0 || rci.url < 0) {
+    throw new Error('migrateImageUrlsToDrive: could not find Status/SrNo/NewURL columns in ' + IMAGE_REVIEW_SHEET);
+  }
+
+  var manifest = {};  // sr -> new Drive thumbnail URL, MATCHED rows only
+  for (var i = 1; i < reviewVals.length; i++) {
+    var row = reviewVals[i];
+    if (String(row[rci.status] || '').trim().toUpperCase() !== 'MATCHED') continue;
+    var sr = String(row[rci.sr] || '').replace(/[^0-9]/g, '');
+    if (!sr) continue;
+    manifest[sr] = String(row[rci.url] || '').trim();
+  }
+
   var sh = ss.getSheetByName(CFG.CATALOG_SHEET) || ss.getSheets()[0];
   var vals = sh.getDataRange().getValues();
   var header = vals[0], C = colMap_(header);
   var ci = { sr: C('sr no'), img: C('image url') };
   if (ci.sr < 0 || ci.img < 0) {
-    throw new Error('migrateImageUrls: could not find "Sr No" or "Image URL" column');
+    throw new Error('migrateImageUrlsToDrive: could not find "Sr No" or "Image URL" column in ' + CFG.CATALOG_SHEET);
   }
 
-  var updated = 0, unchanged = 0, noManifestEntry = [];
+  var updated = 0, unchanged = 0, noMatch = [];
   for (var r = 1; r < vals.length; r++) {
-    var row = vals[r];
-    var sr = String(row[ci.sr] || '').replace(/[^0-9]/g, '');
-    if (!sr) continue;
-    var sku = 'CS' + ('0000' + sr).slice(-4);
-    var newUrl = manifest[sku];
-    if (!newUrl) { noManifestEntry.push(sku); continue; }
-    var currentUrl = String(row[ci.img] || '').trim();
+    var catRow = vals[r];
+    var catSr = String(catRow[ci.sr] || '').replace(/[^0-9]/g, '');
+    if (!catSr) continue;
+    var newUrl = manifest[catSr];
+    if (!newUrl) { noMatch.push(catSr); continue; }
+    var currentUrl = String(catRow[ci.img] || '').trim();
     if (currentUrl === newUrl) { unchanged++; continue; }
     sh.getRange(r + 1, ci.img + 1).setValue(newUrl);
     updated++;
   }
 
-  var summary = 'migrateImageUrls: updated ' + updated + ', already correct ' + unchanged +
-    ', no manifest entry for ' + noManifestEntry.length +
-    (noManifestEntry.length ? (' (' + noManifestEntry.slice(0, 20).join(', ') + (noManifestEntry.length > 20 ? ', …' : '') + ')') : '');
+  var summary = 'migrateImageUrlsToDrive: updated ' + updated + ', already correct ' + unchanged +
+    ', no MATCHED review row for ' + noMatch.length + ' products';
   Logger.log(summary);
   return summary;
 }

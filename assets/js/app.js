@@ -293,14 +293,20 @@ const PLACEHOLDER_IMG = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent
   '<text x="50%" y="50%" fill="#9aa0a6" font-family="system-ui,-apple-system,sans-serif" ' +
   'font-size="18" text-anchor="middle" dominant-baseline="middle">Image coming soon</text></svg>');
 
-/* Every product photo is a Google Drive proxy URL (lh3.googleusercontent.com/d/<id>=w1200)
-   served at the same 1200px width no matter how small it's actually shown. This rewrites
-   the size suffix to whatever the call site needs, so a 52px thumbnail doesn't download a
-   full-size original. Passes anything else (the data: placeholder, a non-Drive URL) through
-   unchanged. */
+/* Product photos are served straight off Google Drive, either as a thumbnail
+   proxy URL (drive.google.com/thumbnail?id=<fileId>&sz=w1200 — the current
+   format) or the older lh3.googleusercontent.com/d/<id>=w1200 proxy form.
+   Both are served at a fixed width no matter how small they're actually
+   shown, so this rewrites the size parameter to whatever the call site
+   needs (a 52px thumbnail shouldn't download a full-size original). Passes
+   anything else (the data: placeholder, a non-Drive URL) through unchanged. */
 function imgAt(url, w) {
-  if (!url || url.startsWith('data:') || !url.includes('googleusercontent.com')) return url;
-  return url.replace(/=w\d+$/, '=w' + w);
+  if (!url || url.startsWith('data:')) return url;
+  if (url.includes('drive.google.com/thumbnail')) {
+    return /[?&]sz=/.test(url) ? url.replace(/([?&]sz=)w?\d+/, '$1w' + w) : url + '&sz=w' + w;
+  }
+  if (url.includes('googleusercontent.com')) return url.replace(/=w\d+$/, '=w' + w);
+  return url;
 }
 
 /* Live catalogue from the Apps Script feed when configured, else the bundled
@@ -604,10 +610,12 @@ const PRICE_ON_REQUEST = '';
    the kit builder, so "Drinkware under ₹500" cannot mean two different things
    in two places. */
 const Filters = {
-  state: { q: '', sort: 'featured', min: 0, max: Infinity, moq: Infinity, cat: '', sub: '' },
+  state: { q: '', sort: 'featured', min: 0, max: Infinity, moq: Infinity, cat: '', sub: '',
+           brand: '', tag: '', topSelling: false, sustainable: false },
 
   reset() {
-    this.state = { q: '', sort: 'featured', min: 0, max: Infinity, moq: Infinity, cat: '', sub: '' };
+    this.state = { q: '', sort: 'featured', min: 0, max: Infinity, moq: Infinity, cat: '', sub: '',
+                   brand: '', tag: '', topSelling: false, sustainable: false };
   },
 
   matches(p) {
@@ -620,6 +628,10 @@ const Filters = {
     if (p.moq > s.moq) return false;
     if (s.cat && p.category !== s.cat) return false;
     if (s.sub && p.subcategory !== s.sub) return false;
+    if (s.brand && p.brand !== s.brand) return false;
+    if (s.tag && !(p.event_tags || []).includes(s.tag)) return false;
+    if (s.topSelling && !p.top_selling) return false;
+    if (s.sustainable && !p.sustainable) return false;
     const q = s.q.trim().toLowerCase();
     if (!q) return true;
     const hay = `${p.name} ${p.sku} ${p.category} ${p.subcategory} ${p.description || ''}`.toLowerCase();
@@ -696,6 +708,65 @@ const Filters = {
           Filters.state.cat = opts.keepCategory ? keep : ''; Filters.state.sub = opts.keepCategory ? sub : '';
           host.textContent = ''; Filters.bar(host, opts, onChange); fireNow(); },
       }, 'Reset')));
+  },
+
+  /* Renders the always-visible left-hand facet rail into `host`: Tags,
+     Select By Brand, and the two merchandising toggles. `opts.products`
+     is the full (unfiltered) catalogue, used only to derive the distinct
+     brand/tag values on offer — filtering itself still goes through
+     matches()/apply() like every other Filters control. Includes its own
+     mobile "Filters" toggle button so callers don't have to build one. */
+  sidebar(host, opts, onChange) {
+    opts = opts || {};
+    const s = this.state;
+    const products = opts.products || [];
+    const fireNow = () => onChange();
+    const repaint = () => { host.textContent = ''; Filters.sidebar(host, opts, onChange); };
+
+    const brands = [...new Set(products.map(p => p.brand).filter(Boolean))].sort();
+    const tags = [...new Set(products.flatMap(p => p.event_tags || []))].sort();
+
+    const section = (title, body) => el('div', { class: 'rail-sec' },
+      el('h3', { class: 'rail-title' }, title), body);
+
+    const tagChips = tags.length
+      ? el('div', { class: 'rail-chips' }, tags.map(t => el('button', {
+          class: 'chip' + (s.tag === t ? ' on' : ''), type: 'button',
+          onclick: () => { s.tag = s.tag === t ? '' : t; repaint(); fireNow(); },
+        }, t)))
+      : el('p', { class: 'muted small' }, 'No tags yet');
+
+    const brandList = brands.length
+      ? el('div', { class: 'rail-list' }, brands.map(b => el('label', { class: 'rail-check' },
+          el('input', {
+            type: 'checkbox', checked: s.brand === b ? 'checked' : null,
+            onchange: e => { s.brand = e.target.checked ? b : ''; repaint(); fireNow(); },
+          }), el('span', {}, b))))
+      : el('p', { class: 'muted small' }, 'No brands yet');
+
+    const toggle = (label, key) => el('label', { class: 'rail-check' },
+      el('input', {
+        type: 'checkbox', checked: s[key] ? 'checked' : null,
+        onchange: e => { s[key] = e.target.checked; fireNow(); },
+      }), el('span', {}, label));
+
+    const rail = el('aside', { class: 'filter-rail', id: 'filterRail' },
+      section('Tags', tagChips),
+      section('Select By Brand', brandList),
+      section('Highlights', el('div', { class: 'rail-list' },
+        toggle('Deloitte Top Selling', 'topSelling'),
+        toggle('Sustainable', 'sustainable'))),
+      el('button', {
+        class: 'btn btn-ghost btn-sm rail-clear', type: 'button',
+        onclick: () => { s.brand = ''; s.tag = ''; s.topSelling = false; s.sustainable = false; repaint(); fireNow(); },
+      }, 'Clear filters'));
+
+    host.append(
+      el('button', {
+        class: 'btn btn-ghost rail-toggle-btn', type: 'button',
+        onclick: () => rail.classList.toggle('rail-open'),
+      }, 'Filters'),
+      rail);
   },
 };
 
@@ -815,7 +886,9 @@ function header(active) {
         el('a', { class: 'catnav-top' + (active === 'All' ? ' on' : ''), href: 'all.html' },
           'All products'),
         el('a', { class: 'catnav-top nav-kit' + (active === 'Kit' ? ' on' : ''), href: 'kit.html' },
-          'Build a kit'))));
+          'Build a Kit'),
+        el('a', { class: 'catnav-top nav-kit' + (active === 'PresetKits' ? ' on' : ''), href: 'preset-kits.html' },
+          'Preset Kits'))));
 }
 
 /* The six curated occasions (New Joinee Program, Employee Recognition &
@@ -894,7 +967,10 @@ function openMenu(active) {
         el('a', { class: 'menu-cat', href: 'all.html' }, 'All products')),
 
       el('div', { class: 'menu-group' },
-        el('a', { class: 'menu-cat', href: 'kit.html' }, 'Build a kit')),
+        el('a', { class: 'menu-cat' + (active === 'Kit' ? ' on' : ''), href: 'kit.html' }, 'Build a Kit')),
+
+      el('div', { class: 'menu-group' },
+        el('a', { class: 'menu-cat' + (active === 'PresetKits' ? ' on' : ''), href: 'preset-kits.html' }, 'Preset Kits')),
 
       ));
 

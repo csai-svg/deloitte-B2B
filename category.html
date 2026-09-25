@@ -17,10 +17,15 @@
     <h1 id="title"></h1>
     <div class="muted small" id="count"></div>
   </div>
-  <div class="filters" id="filters"></div>
-  <div id="bar"></div>
-  <div class="grid" id="grid"></div>
-  <div class="empty hidden" id="empty"><h2>Nothing here</h2><p>No products in this filter.</p></div>
+  <div class="catalog-layout">
+    <div id="rail"></div>
+    <div class="catalog-main">
+      <div class="filters" id="filters"></div>
+      <div id="bar"></div>
+      <div class="grid" id="grid"></div>
+      <div class="empty hidden" id="empty"><h2>Nothing here</h2><p>No products in this filter.</p></div>
+    </div>
+  </div>
 </main>
 
 <script src="assets/js/app.js"></script>
@@ -55,6 +60,7 @@
   Filters.state.cat = cat;
   Filters.state.sub = sub || '';
   Filters.bar(document.getElementById('bar'), { keepCategory: true }, paint);
+  Filters.sidebar(document.getElementById('rail'), { products: all }, paint);
   paint();
 
   function paint() {

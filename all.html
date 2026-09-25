@@ -16,10 +16,15 @@
     <h1>All products</h1>
     <div class="muted small">Search the whole catalogue, filter by price or minimum order quantity.</div>
   </div>
-  <div id="bar"></div>
-  <div class="fbar-count" id="count"></div>
-  <div class="grid" id="grid"></div>
-  <div class="empty hidden" id="empty"><h2>Nothing matches</h2><p>Try a different search or clear the filters.</p></div>
+  <div class="catalog-layout">
+    <div id="rail"></div>
+    <div class="catalog-main">
+      <div id="bar"></div>
+      <div class="fbar-count" id="count"></div>
+      <div class="grid" id="grid"></div>
+      <div class="empty hidden" id="empty"><h2>Nothing matches</h2><p>Try a different search or clear the filters.</p></div>
+    </div>
+  </div>
 </main>
 
 <script src="assets/js/app.js"></script>
@@ -35,6 +40,7 @@
 
   const cats = [...new Set(Catalog.products.map(p => p.category))].sort();
   Filters.bar(document.getElementById('bar'), { categories: cats }, paint);
+  Filters.sidebar(document.getElementById('rail'), { products: Catalog.products }, paint);
   paint();
 })();
 
