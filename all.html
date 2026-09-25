@@ -37,6 +37,7 @@
   Filters.reset();
   Filters.state.q = param('q');
   Filters.state.cat = param('cat');
+  Filters.state.topSelling = param('top_selling') === '1';
 
   const cats = [...new Set(Catalog.products.map(p => p.category))].sort();
   Filters.bar(document.getElementById('bar'), { categories: cats }, paint);

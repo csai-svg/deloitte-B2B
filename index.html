@@ -57,14 +57,9 @@
       el('div', { class: 'small muted' }, `${counts[c.slug] || 0} products`));
   }));
 
-  // One representative product per subcategory, dearest first, capped at 10.
-  const seen = new Set(), picks = [];
-  for (const p of [...Catalog.products].sort((a, b) => b.base_price - a.base_price)) {
-    if (seen.has(p.subcategory)) continue;
-    seen.add(p.subcategory);
-    picks.push(p);
-    if (picks.length === 10) break;
-  }
+  // The products the sheet actually flags as top selling, dearest first, capped at 10.
+  const picks = Catalog.products.filter(p => p.top_selling)
+    .sort((a, b) => b.base_price - a.base_price).slice(0, 10);
   document.getElementById('featured').append(...picks.map(productCard));
 })();
 
