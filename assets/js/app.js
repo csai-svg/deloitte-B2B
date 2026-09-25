@@ -943,7 +943,9 @@ function header(active) {
         el('a', { class: 'catnav-top nav-kit' + (active === 'Kit' ? ' on' : ''), href: 'kit.html' },
           'Build a Kit'),
         el('a', { class: 'catnav-top nav-kit' + (active === 'PresetKits' ? ' on' : ''), href: 'preset-kits.html' },
-          'Preset Kits'))));
+          'Preset Kits'),
+        el('a', { class: 'catnav-top nav-kit' + (active === 'TopSelling' ? ' on' : ''), href: 'index.html#featured' },
+          'Deloitte Top Selling'))));
 }
 
 /* The six curated occasions (New Joinee Program, Employee Recognition &
@@ -1024,6 +1026,9 @@ function openMenu(active) {
 
       el('div', { class: 'menu-group' },
         el('a', { class: 'menu-cat' + (active === 'PresetKits' ? ' on' : ''), href: 'preset-kits.html' }, 'Preset Kits')),
+
+      el('div', { class: 'menu-group' },
+        el('a', { class: 'menu-cat' + (active === 'TopSelling' ? ' on' : ''), href: 'index.html#featured' }, 'Deloitte Top Selling')),
 
       ));
 
