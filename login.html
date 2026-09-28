@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Sign in — Deloitte Merchandise Store</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+<main>
+  <div class="wrap" style="max-width:420px;padding-top:64px;padding-bottom:64px">
+    <div style="text-align:center;margin-bottom:28px">
+      <img src="assets/brand/logo.png" alt="Deloitte" style="height:34px;object-fit:contain">
+    </div>
+
+    <div class="card" style="padding:28px 24px">
+      <section id="step-google">
+        <h1 style="font-size:1.15rem;margin:0 0 6px">Sign in to continue</h1>
+        <p class="small" style="color:var(--muted);margin:0 0 20px">
+          This store is only available to Deloitte employees. Sign in with your work Google account.
+        </p>
+        <div id="g-btn" style="display:flex;justify-content:center;min-height:44px"></div>
+        <p id="google-status" class="small" style="color:var(--brand);margin-top:14px;min-height:1em"></p>
+      </section>
+
+      <section id="step-otp" class="hidden">
+        <h1 style="font-size:1.15rem;margin:0 0 6px">Enter your code</h1>
+        <p class="small" id="otp-copy" style="color:var(--muted);margin:0 0 20px"></p>
+        <form id="otp-form">
+          <label class="field">
+            <span>6-digit code</span>
+            <input type="text" id="otp-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+              autocomplete="one-time-code" placeholder="000000" required>
+          </label>
+          <button type="submit" class="btn btn-block">Verify &amp; continue</button>
+        </form>
+        <p id="otp-status" class="small" style="color:var(--brand);margin-top:14px;min-height:1em"></p>
+        <p class="small" style="margin-top:10px">
+          Didn't get a code?
+          <button type="button" id="resend-btn" class="link-quiet" style="background:none;border:none;cursor:pointer;padding:0">Resend code</button>
+        </p>
+      </section>
+
+      <section id="step-done" class="hidden">
+        <h1 style="font-size:1.15rem;margin:0 0 6px">You're signed in</h1>
+        <p class="small" style="color:var(--muted)">Redirecting…</p>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script src="assets/js/app.js"></script>
+<script>
+(function () {
+  const stepGoogle = document.getElementById('step-google');
+  const stepOtp = document.getElementById('step-otp');
+  const stepDone = document.getElementById('step-done');
+  const googleStatus = document.getElementById('google-status');
+  const otpStatus = document.getElementById('otp-status');
+  const otpCopy = document.getElementById('otp-copy');
+  const otpForm = document.getElementById('otp-form');
+  const otpInput = document.getElementById('otp-input');
+  const resendBtn = document.getElementById('resend-btn');
+
+  let pendingEmail = '';
+  let resendTimer = null;
+
+  function showOtpStep(email) {
+    pendingEmail = email;
+    otpCopy.textContent = 'We sent a 6-digit code to ' + email + '.';
+    stepGoogle.classList.add('hidden');
+    stepOtp.classList.remove('hidden');
+    otpInput.focus();
+  }
+
+  function armResendCooldown(secs) {
+    secs = secs || 60;
+    clearInterval(resendTimer);
+    resendBtn.disabled = true;
+    const tick = () => {
+      if (secs <= 0) { clearInterval(resendTimer); resendBtn.disabled = false; resendBtn.textContent = 'Resend code'; return; }
+      resendBtn.textContent = 'Resend code (' + secs + 's)';
+      secs--;
+    };
+    tick();
+    resendTimer = setInterval(tick, 1000);
+  }
+
+  function handleGoogleCredential(resp) {
+    googleStatus.textContent = 'Checking your account…';
+    api('auth_google', { id_token: resp.credential })
+      .then(d => { showOtpStep(d.email); armResendCooldown(60); })
+      .catch(err => { googleStatus.textContent = err.message || 'That account is not on the deloitte.com domain.'; });
+  }
+  window.handleGoogleCredential = handleGoogleCredential;
+
+  function initGoogle() {
+    if (!window.google || !google.accounts || !google.accounts.id) { setTimeout(initGoogle, 100); return; }
+    if (!CONFIG.GOOGLE_CLIENT_ID) {
+      googleStatus.textContent = 'Sign-in is not configured yet. Contact the store admin.';
+      return;
+    }
+    google.accounts.id.initialize({ client_id: CONFIG.GOOGLE_CLIENT_ID, callback: handleGoogleCredential });
+    google.accounts.id.renderButton(document.getElementById('g-btn'), { theme: 'outline', size: 'large', width: 280 });
+  }
+  initGoogle();
+
+  otpForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    otpStatus.textContent = 'Verifying…';
+    try {
+      const d = await api('auth_verify_otp', { email: pendingEmail, otp: otpInput.value.trim() });
+      Auth.set(d.token, { email: d.email });
+      stepOtp.classList.add('hidden');
+      stepDone.classList.remove('hidden');
+      location.href = param('next') || 'index.html';
+    } catch (err) {
+      otpStatus.textContent = err.message || 'Incorrect code.';
+    }
+  });
+
+  resendBtn.addEventListener('click', () => {
+    resendBtn.disabled = true;
+    api('auth_resend_otp', { email: pendingEmail })
+      .then(() => { otpStatus.textContent = 'A new code is on its way.'; armResendCooldown(60); })
+      .catch(err => { otpStatus.textContent = err.message || 'Could not resend right now.'; resendBtn.disabled = false; });
+  });
+})();
+</script>
+</body>
+</html>

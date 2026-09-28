@@ -7,7 +7,7 @@
   routes submissions accordingly. Two sheets would mean maintaining the same
   catalogue twice and letting it drift — deliberately not done here.
 
-  Does TWO things and nothing else:
+  Does these things and nothing else:
 
     doGet(?fn=catalog&brand=Optum)  -> live JSON of ONLY the public columns
                            (name, brand, description, gender, category, moq,
@@ -18,7 +18,14 @@
                            brand's own "<Brand> Kit Requests" tab (created if
                            missing) so ASMs see cart/kit submissions per site,
                            without splitting the catalogue itself.
-                           No login, no approval, no payment.
+    doPost {fn:'auth_google'|'auth_resend_otp'|'auth_verify_otp', ...} ->
+                           the Deloitte site's login gate: verifies a Google
+                           ID token is a CFG.ALLOWED_DOMAIN address, emails a
+                           one-time code, and verifies it into a session
+                           token. When CFG.REQUIRE_LOGIN is true, fn=catalog
+                           and fn=kit_request both require that session
+                           token (?session=/body.session) — see the "Deloitte
+                           -only login gate" block below for details.
 
   Deploy (once): Extensions > Apps Script (from the master sheet) > paste
   this > Deploy > New deployment > Web app > Execute as: Me > Who has
@@ -36,6 +43,16 @@ var CFG = {
   CATALOG_SHEET: 'Product Collection', // tab name of the shared catalogue (edit to match)
   TOKEN: '',                           // optional shared secret; '' = open
   CACHE_SECS: 60,
+
+  // Deloitte-only login gate (Google OAuth domain check + email OTP).
+  GOOGLE_CLIENT_ID: '',                 // fill in after creating the OAuth client in Google Cloud Console
+  ALLOWED_DOMAIN: 'deloitte.com',
+  REQUIRE_LOGIN: true,                  // flip to false to debug the feed/kit_request without auth
+  OTP_TTL_SECS: 300,                    // how long an emailed code stays valid
+  OTP_RESEND_COOLDOWN_SECS: 60,         // minimum gap between two codes to the same email
+  OTP_MAX_SENDS_PER_HOUR: 5,            // per email, across resends
+  OTP_MAX_ATTEMPTS: 5,                  // wrong-code guesses allowed before a code is dead
+  SESSION_TTL_SECS: 6 * 60 * 60,        // server-side ceiling on a signed-in session
 };
 
 /* Header-name -> column finder (tolerant: trims, lowercases, ignores spaces).
@@ -190,9 +207,139 @@ function jsonOut_(obj, cb) {
   return ContentService.createTextOutput(s).setMimeType(ContentService.MimeType.JSON);
 }
 
+/* ------------------------------------------------------------------
+   Deloitte-only login gate: Google OAuth (domain check) + email OTP.
+   Two round trips from the client (see login.html):
+     1. auth_google      { id_token } -> verifies the Google ID token
+                          server-side, checks it's a CFG.ALLOWED_DOMAIN
+                          address, emails a 6-digit code.
+     2. auth_verify_otp  { email, otp } -> checks the code, on success
+                          mints an opaque session token good for
+                          CFG.SESSION_TTL_SECS.
+   Every other endpoint (fn=catalog, fn=kit_request) then requires that
+   session token, so the gate is enforced here, not just by the page
+   redirecting an unauthenticated visitor to login.html.
+   ------------------------------------------------------------------ */
+
+function verifyGoogleIdToken_(idToken) {
+  if (!idToken) return { ok: false, error: 'missing id_token' };
+  var res;
+  try {
+    res = UrlFetchApp.fetch(
+      'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
+      { muteHttpExceptions: true }
+    );
+  } catch (err) {
+    return { ok: false, error: 'could not reach Google' };
+  }
+  if (res.getResponseCode() !== 200) return { ok: false, error: 'invalid or expired Google token' };
+  var payload;
+  try { payload = JSON.parse(res.getContentText()); } catch (err) { return { ok: false, error: 'bad token response' }; }
+
+  if (!CFG.GOOGLE_CLIENT_ID || payload.aud !== CFG.GOOGLE_CLIENT_ID) return { ok: false, error: 'token not issued for this app' };
+  if (String(payload.email_verified) !== 'true') return { ok: false, error: 'Google email is not verified' };
+
+  var email = String(payload.email || '').toLowerCase();
+  var domainOk = (payload.hd && payload.hd.toLowerCase() === CFG.ALLOWED_DOMAIN) ||
+    email.slice(email.indexOf('@') + 1) === CFG.ALLOWED_DOMAIN;
+  if (!domainOk) return { ok: false, error: 'Only @' + CFG.ALLOWED_DOMAIN + ' accounts can sign in' };
+
+  return { ok: true, email: email };
+}
+
+function isAllowedEmail_(email) {
+  email = String(email || '').toLowerCase();
+  return new RegExp('@' + CFG.ALLOWED_DOMAIN.replace(/\./g, '\\.') + '$', 'i').test(email);
+}
+
+function sendOtp_(email) {
+  var cache = CacheService.getScriptCache();
+  var metaKey = 'otpmeta_' + email;
+  var meta = {};
+  try { meta = JSON.parse(cache.get(metaKey) || '{}'); } catch (err) {}
+  var now = Date.now();
+  if (meta.last && now - meta.last < CFG.OTP_RESEND_COOLDOWN_SECS * 1000) {
+    return { ok: false, error: 'Please wait before requesting another code.' };
+  }
+  var hourAgo = now - 60 * 60 * 1000;
+  var sends = (meta.sends || []).filter(function (t) { return t > hourAgo; });
+  if (sends.length >= CFG.OTP_MAX_SENDS_PER_HOUR) {
+    return { ok: false, error: 'Too many codes requested. Try again later.' };
+  }
+
+  var otp = ('' + Math.floor(100000 + Math.random() * 900000));
+  var record = { code: otp, attempts: 0, exp: now + CFG.OTP_TTL_SECS * 1000 };
+  cache.put('otp_' + email, JSON.stringify(record), CFG.OTP_TTL_SECS);
+
+  sends.push(now);
+  cache.put(metaKey, JSON.stringify({ last: now, sends: sends }), 60 * 60);
+
+  MailApp.sendEmail({
+    to: email,
+    subject: 'Your Deloitte B2B store verification code',
+    body: 'Your verification code is ' + otp + '. It expires in ' +
+      Math.round(CFG.OTP_TTL_SECS / 60) + ' minutes. If you did not request this, you can ignore this email.',
+  });
+  return { ok: true };
+}
+
+function verifyOtp_(email, otp) {
+  email = String(email || '').toLowerCase();
+  var cache = CacheService.getScriptCache();
+  var key = 'otp_' + email;
+  var raw = cache.get(key);
+  if (!raw) return { ok: false, error: 'Code expired or not found. Request a new one.' };
+  var record;
+  try { record = JSON.parse(raw); } catch (err) { return { ok: false, error: 'Code expired or not found. Request a new one.' }; }
+
+  if (Date.now() > record.exp) { cache.remove(key); return { ok: false, error: 'Code expired. Request a new one.' }; }
+  if (record.attempts >= CFG.OTP_MAX_ATTEMPTS) { cache.remove(key); return { ok: false, error: 'Too many incorrect attempts. Request a new code.' }; }
+
+  if (String(otp || '').trim() !== record.code) {
+    record.attempts++;
+    cache.put(key, JSON.stringify(record), CFG.OTP_TTL_SECS);
+    return { ok: false, error: 'Incorrect code.' };
+  }
+
+  cache.remove(key);
+  var token = Utilities.getUuid();
+  cache.put('sess_' + token, email, CFG.SESSION_TTL_SECS);
+  return { ok: true, token: token, email: email };
+}
+
+function requireSession_(token) {
+  if (!token) return null;
+  return CacheService.getScriptCache().get('sess_' + token) || null;
+}
+
+function handleAuthGoogle_(body) {
+  var v = verifyGoogleIdToken_(body.id_token);
+  if (!v.ok) return jsonOut_({ ok: false, error: v.error });
+  var sent = sendOtp_(v.email);
+  if (!sent.ok) return jsonOut_({ ok: false, error: sent.error });
+  return jsonOut_({ ok: true, email: v.email });
+}
+
+function handleAuthResendOtp_(body) {
+  var email = String(body.email || '').toLowerCase();
+  if (!isAllowedEmail_(email)) return jsonOut_({ ok: false, error: 'unauthorized' });
+  var sent = sendOtp_(email);
+  if (!sent.ok) return jsonOut_({ ok: false, error: sent.error });
+  return jsonOut_({ ok: true });
+}
+
+function handleAuthVerifyOtp_(body) {
+  var v = verifyOtp_(body.email, body.otp);
+  if (!v.ok) return jsonOut_({ ok: false, error: v.error });
+  return jsonOut_({ ok: true, token: v.token, email: v.email });
+}
+
 function doGet(e) {
   var p = (e && e.parameter) || {};
   if (CFG.TOKEN && p.token !== CFG.TOKEN) return jsonOut_({ error: 'unauthorized' }, p.callback);
+  if (CFG.REQUIRE_LOGIN && !requireSession_(p.session)) {
+    return jsonOut_({ error: 'unauthorized' }, p.callback);
+  }
   var brand = normalizeBrand_(p.brand);
   var cache = CacheService.getScriptCache();
   var key = 'catalog_' + brand;
@@ -203,12 +350,7 @@ function doGet(e) {
   return jsonOut_(data, p.callback);
 }
 
-function doPost(e) {
-  var body = {};
-  try { body = JSON.parse(e.postData.contents); } catch (err) { return jsonOut_({ ok: false, error: 'bad json' }); }
-  if (CFG.TOKEN && body.token !== CFG.TOKEN) return jsonOut_({ ok: false, error: 'unauthorized' });
-  if (body.fn !== 'kit_request') return jsonOut_({ ok: false, error: 'unknown fn' });
-
+function handleKitRequest_(body) {
   var brand = normalizeBrand_(body.brand);   // 'Optum' or 'Deloitte', from the site that submitted
   var tabName = brand + ' Kit Requests';     // per-brand tab, created on demand
   var ss = SpreadsheetApp.getActive();
@@ -222,6 +364,23 @@ function doPost(e) {
   var totalQty = items.reduce(function (s, it) { return s + (Number(it.qty) || 0); }, 0);
   sh.appendRow([new Date(), brand, body.name || '', body.email || '', body.notes || '', summary, totalQty, JSON.stringify(items)]);
   return jsonOut_({ ok: true });
+}
+
+function doPost(e) {
+  var body = {};
+  try { body = JSON.parse(e.postData.contents); } catch (err) { return jsonOut_({ ok: false, error: 'bad json' }); }
+  if (CFG.TOKEN && body.token !== CFG.TOKEN) return jsonOut_({ ok: false, error: 'unauthorized' });
+
+  switch (body.fn) {
+    case 'auth_google': return handleAuthGoogle_(body);
+    case 'auth_resend_otp': return handleAuthResendOtp_(body);
+    case 'auth_verify_otp': return handleAuthVerifyOtp_(body);
+    case 'kit_request':
+      if (CFG.REQUIRE_LOGIN && !requireSession_(body.session)) return jsonOut_({ ok: false, error: 'unauthorized' });
+      return handleKitRequest_(body);
+    default:
+      return jsonOut_({ ok: false, error: 'unknown fn' });
+  }
 }
 
 /* ------------------------------------------------------------------

@@ -12,6 +12,10 @@ const CONFIG = {
   API_TOKEN: '',
   CURRENCY: '₹',
   BRAND: 'Deloitte',
+  // OAuth 2.0 Web application Client ID from Google Cloud Console, scoped to
+  // this site's origin. Used by login.html; the actual @deloitte.com domain
+  // check happens server-side in Code.gs, never trust the client for that.
+  GOOGLE_CLIENT_ID: '',
 };
 if (CONFIG.FEED_URL && !CONFIG.API_URL) CONFIG.API_URL = CONFIG.FEED_URL;
 
@@ -385,12 +389,19 @@ function jsonp(url, timeoutMs = 8000) {
    cached, so the next page navigation shows the latest sheet data. */
 function feedUrl() {
   return CONFIG.FEED_URL + '?fn=catalog&brand=' + encodeURIComponent(CONFIG.BRAND)
-    + (CONFIG.API_TOKEN ? '&token=' + encodeURIComponent(CONFIG.API_TOKEN) : '');
+    + (CONFIG.API_TOKEN ? '&token=' + encodeURIComponent(CONFIG.API_TOKEN) : '')
+    + '&session=' + encodeURIComponent(Auth.token());
 }
 function refreshFeedCache() {
   if (!CONFIG.FEED_URL) return;
   jsonp(feedUrl(), 12000)
-    .then(d => { if (d && Array.isArray(d.products) && d.products.length) { try { sessionStorage.setItem('cs_feed', JSON.stringify(d)); } catch (e) {} } })
+    .then(d => {
+      /* The session lapsed server-side (Code.gs CFG.SESSION_TTL_SECS)
+         while this tab stayed open — force a fresh login instead of
+         quietly degrading to the bundled snapshot. */
+      if (d && d.error === 'unauthorized') { Auth.clear(); location.href = 'login.html'; return; }
+      if (d && Array.isArray(d.products) && d.products.length) { try { sessionStorage.setItem('cs_feed', JSON.stringify(d)); } catch (e) {} }
+    })
     .catch(() => {});
 }
 async function loadCatalogueJSON() {
@@ -471,11 +482,18 @@ const Auth = {
     sessionStorage.removeItem('cs_session');
     sessionStorage.removeItem('cs_user');
   },
-  /* Catalogue is public. Only checkout calls this. */
+  /* The whole site requires login now (see the inline head-guard on every
+     protected page); this stays for any spot that wants an explicit
+     in-JS check before doing something, e.g. before a kit submit. */
   require(next) {
     if (this.user()) return true;
     location.href = 'login.html?next=' + encodeURIComponent(next || location.pathname.split('/').pop());
     return false;
+  },
+  logout() {
+    this.clear();
+    try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
+    location.href = 'login.html';
   },
 };
 
@@ -932,6 +950,11 @@ function header(active) {
           placeholder: 'Search products…' }),
         el('button', { type: 'submit', 'aria-label': 'Search', html: ICONS.search })),
       el('div', { class: 'head-icons' },
+        u ? el('button', {
+          class: 'link-quiet', type: 'button', title: 'Signed in as ' + u.email,
+          style: 'font-size:12px;background:none;border:none;cursor:pointer',
+          onclick: () => Auth.logout(),
+        }, 'Sign out') : null,
         el('a', { class: 'icon-btn', href: 'cart.html', title: 'Cart', html: ICONS.cart },
           el('span', { 'data-cart-count': '1', class: 'pill hidden' }, '0')))),
 
@@ -1008,6 +1031,10 @@ function openMenu(active) {
       el('button', { class: 'menu-x', type: 'button', 'aria-label': 'Close', onclick: closeMenu, html: ICONS.close })),
 
     el('div', { class: 'menu-body' },
+      u ? el('div', { class: 'menu-group' },
+        el('div', { class: 'small', style: 'padding:6px 4px;color:var(--muted,#666)' }, 'Signed in as ' + u.email),
+        el('a', { class: 'menu-cat', href: '#', onclick: e => { e.preventDefault(); Auth.logout(); } }, 'Sign out')) : null,
+
       cats.map(c => el('div', { class: 'menu-group' },
         el('a', {
           class: 'menu-cat' + (active === c.slug ? ' on' : ''),
