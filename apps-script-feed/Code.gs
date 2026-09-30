@@ -1,45 +1,53 @@
 /*
-  B2B view-only catalogue — ONE shared Apps Script Web App, bound to the
-  master pricing spreadsheet, serving BOTH the Optum and Deloitte storefronts.
-  There is one catalogue (one sheet, one source of truth); the caller says
-  which brand it is on every request via ?brand=Optum|Deloitte (GET) or
-  {brand:'Optum'|'Deloitte'} (POST), and this script tags the response and
-  routes submissions accordingly. Two sheets would mean maintaining the same
-  catalogue twice and letting it drift — deliberately not done here.
+  Deloitte B2B store — Apps Script Web App, bound to this brand's own
+  pricing spreadsheet. Optum runs its own separate deployment and sheet
+  (see optum-B2B/apps-script-feed/Code.gs); the two are independent
+  scripts and no longer share a backend, a catalogue tab, or a /exec URL.
+  The brand-tagging plumbing below (normalizeBrand_, CFG.DEFAULT_BRAND,
+  etc.) is a holdover from when they did and is otherwise harmless to
+  leave in place, but nothing here needs to stay compatible with Optum.
 
   Does these things and nothing else:
 
-    doGet(?fn=catalog&brand=Optum)  -> live JSON of ONLY the public columns
-                           (name, brand, description, gender, category, moq,
-                           gst, price tiers, image). Cost Price + Margins are
-                           NEVER read into the response, so the master sheet
-                           can stay private and nothing internal is exposed.
-    doPost {fn:'kit_request', brand:'Optum', ...} -> appends one row to that
-                           brand's own "<Brand> Kit Requests" tab (created if
-                           missing) so ASMs see cart/kit submissions per site,
-                           without splitting the catalogue itself. Requester
-                           name/username come from the session, never the
-                           posted body.
-    doPost {fn:'login'|'logout', ...} -> the Deloitte site's login gate:
-                           username + password checked against the "Login"
-                           tab in this same spreadsheet (hashed, salted,
-                           constant-time compare), with per-username lockout
-                           after repeated failures. On success mints an
-                           opaque session token. When CFG.REQUIRE_LOGIN is
-                           true and brand is Deloitte, fn=catalog and
+    doGet(?fn=catalog&brand=Deloitte) -> live JSON of ONLY the public
+                           columns (name, brand, description, gender,
+                           category, moq, gst, price tiers, image). Cost
+                           Price + Margins are NEVER read into the
+                           response, so the master sheet can stay private
+                           and nothing internal is exposed. Requires a
+                           valid session (see the login gate below).
+    doPost {fn:'kit_request', ...} -> appends one row to the "Cart
+                           Enquiries" tab so ASMs see cart/kit
+                           submissions. Requester name/username come from
+                           the session, never the posted body.
+    doPost {fn:'login'|'logout', ...} -> the site's login gate: username +
+                           password checked against the "Login" tab in
+                           this same spreadsheet (hashed, salted,
+                           constant-time compare), with per-username
+                           lockout after repeated failures. On success
+                           mints an opaque session token. fn=catalog and
                            fn=kit_request both require that session token
-                           (?session=/body.session) — see the "Deloitte-only
-                           login gate" block below for details.
+                           (?session=/body.session) — see the "login
+                           gate" block below for details.
+    doPost {fn:'agent_log', ...} -> gated capture log for the internal
+                           Agent Merch kit-builder (agent.html). Only a
+                           session whose Login row has agent_access=TRUE
+                           may call this — everyone else gets the same
+                           generic 'unauthorized' as an unauthenticated
+                           request, so the endpoint's existence isn't
+                           revealed to probing. Writes to the "Agent
+                           Capture" tab (created on first use). See
+                           requireAgentSession_ / handleAgentLog_ below.
 
-  Deploy (once): Extensions > Apps Script (from the master sheet) > paste
+  Deploy (once): Extensions > Apps Script (from this spreadsheet) > paste
   this > Deploy > New deployment > Web app > Execute as: Me > Who has
-  access: Anyone > copy the ONE /exec URL into BOTH sites' CONFIG.FEED_URL /
-  CONFIG.API_URL (each site keeps its own CONFIG.BRAND — see assets/js/app.js).
+  access: Anyone > copy the /exec URL into this site's CONFIG.FEED_URL /
+  CONFIG.API_URL (see assets/js/app.js).
 
   Redeploying after an edit: Deploy > Manage deployments > (pencil icon on
   the existing deployment) > Version: New version > Deploy. Editing the
-  existing deployment keeps the same /exec URL so neither site needs to
-  change its config.
+  existing deployment keeps the same /exec URL so the site doesn't need
+  to change its config.
 */
 
 var CFG = {
@@ -266,6 +274,19 @@ function colOf_(header, name, tabName) {
     '". Headers present: ' + header.map(String).join(', '));
 }
 
+/* Same header match as colOf_, but for a column that may not exist yet
+   (e.g. a flag being rolled out sheet-by-sheet): returns -1 instead of
+   throwing, so callers can treat "column absent" the same as "cell
+   blank" rather than breaking login for every user. */
+function colOfOptional_(header, name) {
+  var norm = function (s) { return String(s).toLowerCase().trim().replace(/[\s_]+/g, ' '); };
+  var target = norm(name);
+  for (var i = 0; i < header.length; i++) {
+    if (norm(header[i]) === target) return i;
+  }
+  return -1;
+}
+
 function getLoginSheet_() {
   var sh = SpreadsheetApp.getActive().getSheetByName(CFG.LOGIN_SHEET);
   if (!sh) throw new Error('getLoginSheet_: no "' + CFG.LOGIN_SHEET + '" tab found');
@@ -284,6 +305,10 @@ function loginCols_(header) {
     company: colOf_(header, 'company', CFG.LOGIN_SHEET),
     lastLogin: colOf_(header, 'last_login', CFG.LOGIN_SHEET),
     notes: colOf_(header, 'notes', CFG.LOGIN_SHEET),
+    // Gates the internal Agent Merch kit-builder (agent.html). Optional on
+    // purpose: a sheet that doesn't have this column yet (or any row with
+    // the cell blank) just means "no agent access", never a broken login.
+    agentAccess: colOfOptional_(header, 'agent_access'),
   };
 }
 
@@ -398,6 +423,17 @@ function requireSession_(token) {
   try { return JSON.parse(raw); } catch (err) { return null; }
 }
 
+/* Same session lookup as requireSession_, plus the agent_access flag
+   minted into the session at login (see handleLogin_). Callers treat a
+   null return exactly like an unauthenticated request — the generic
+   'unauthorized' error never distinguishes "not signed in" from
+   "signed in but not an agent", so a probing client learns nothing
+   about whether the feature even exists. */
+function requireAgentSession_(token) {
+  var session = requireSession_(token);
+  return (session && session.agentAccess) ? session : null;
+}
+
 function handleLogin_(body) {
   var username = String(body.username || '').trim();
   var password = String(body.password || '').trim();
@@ -440,16 +476,19 @@ function handleLogin_(body) {
   clearLoginFailures_(usernameKey);
   var name = String(rec.row[rec.ci.name] || '').trim() || username;
   var email = String(rec.row[rec.ci.email] || '').trim();
+  var company = String(rec.row[rec.ci.company] || '').trim();
+  var agentAccess = rec.ci.agentAccess >= 0 &&
+    /^\s*(true|yes|1)\s*$/i.test(String(rec.row[rec.ci.agentAccess] || ''));
   var token = Utilities.getUuid();
   var expires = Date.now() + CFG.SESSION_TTL_SECS * 1000;
   CacheService.getScriptCache().put('sess_' + token,
-    JSON.stringify({ username: usernameKey, name: name, email: email }),
+    JSON.stringify({ username: usernameKey, name: name, email: email, company: company, agentAccess: agentAccess }),
     CFG.SESSION_TTL_SECS);
 
   try { rec.sheet.getRange(rec.rowIndex, rec.ci.lastLogin + 1).setValue(new Date()); } catch (err) {}
   notifyWebhook_('✅ *' + name + '* (' + usernameKey + ') signed in to the Deloitte store.');
 
-  return jsonOut_({ ok: true, token: token, name: name, expires: expires });
+  return jsonOut_({ ok: true, token: token, name: name, expires: expires, features: { agentMerch: agentAccess } });
 }
 
 function handleLogout_(body) {
@@ -497,6 +536,46 @@ function handleKitRequest_(body, session) {
   return jsonOut_({ ok: true });
 }
 
+/* ------------------------------------------------------------------
+   Agent Merch (agent.html) capture log: every generate/manual-add/status/
+   PDF-export event from the gated kit-builder lands here as one row.
+   Identity columns (Username/Name/Company) come from the session the
+   caller's token resolves to, never from the posted body, so a forged
+   field in the request payload cannot land in the sheet. Only a session
+   with agentAccess:true (see requireAgentSession_) reaches this function
+   at all — doPost rejects everyone else with a generic 'unauthorized'
+   before handleAgentLog_ is ever called. */
+var AGENT_CAPTURE_SHEET = 'Agent Capture';
+
+function handleAgentLog_(body, session) {
+  var ss = SpreadsheetApp.getActive();
+  var sh = ss.getSheetByName(AGENT_CAPTURE_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(AGENT_CAPTURE_SHEET);
+    sh.appendRow(['Timestamp', 'Username', 'Name', 'Company', 'Event', 'QuoteId', 'ClientName', 'Payload']);
+  }
+  var payload = {};
+  for (var k in body) {
+    if (k === 'fn' || k === 'token' || k === 'session') continue;
+    payload[k] = body[k];
+  }
+  sh.appendRow([
+    new Date(), session.username, session.name, session.company || '',
+    String(body.event || ''), String(body.quoteId || ''), String(body.clientName || ''),
+    JSON.stringify(payload),
+  ]);
+  // Only a PDF export pings the team chat; every other event (generate,
+  // manual_add, status changes) is capture-only, per the "reuse the
+  // webhook only for exports" requirement — a chat message per click
+  // would be noise.
+  if (body.event === 'pdf_export') {
+    notifyWebhook_('📄 *' + session.name + '* exported a quote' +
+      (body.quoteId ? ' (' + body.quoteId + ')' : '') +
+      (body.clientName ? ' for ' + body.clientName : '') + '.');
+  }
+  return jsonOut_({ ok: true });
+}
+
 function doPost(e) {
   var body = {};
   try { body = JSON.parse(e.postData.contents); } catch (err) { return jsonOut_({ ok: false, error: 'bad json' }); }
@@ -510,6 +589,10 @@ function doPost(e) {
       var session = requireSession_(body.session);
       if (brand === 'Deloitte' && CFG.REQUIRE_LOGIN && !session) return jsonOut_({ ok: false, error: 'unauthorized' });
       return handleKitRequest_(body, session);
+    case 'agent_log':
+      var agentSession = requireAgentSession_(body.session);
+      if (!agentSession) return jsonOut_({ ok: false, error: 'unauthorized' });
+      return handleAgentLog_(body, agentSession);
     default:
       return jsonOut_({ ok: false, error: 'unknown fn' });
   }
@@ -654,6 +737,16 @@ function runTestKitRequest() {
   var res = doPost({ postData: { contents: JSON.stringify({
     fn: 'kit_request', brand: 'Deloitte', session: 'not-a-real-session',
     items: [{ sku: 'CS0001', name: 'Test Product', qty: 20 }],
+  }) } });
+  Logger.log(res.getContent());
+  return res.getContent();
+}
+
+/* Expect {ok:false, error:'unauthorized'} — a fake token must never reach
+   handleAgentLog_, whether or not any Login row has agent_access set. */
+function runTestAgentLogUnauthorized() {
+  var res = doPost({ postData: { contents: JSON.stringify({
+    fn: 'agent_log', session: 'not-a-real-session', event: 'test',
   }) } });
   Logger.log(res.getContent());
   return res.getContent();
