@@ -4,7 +4,15 @@
     "logo_url": "assets/brand/logo.png",
     "logo_white_url": "assets/brand/logo-white.png",
     "hero_title": "Deloitte branded merchandise",
-    "hero_subtitle": "Browse the catalogue and build a request — no sign-in needed."
+    "hero_subtitle": "Browse the catalogue and build a request — no sign-in needed.",
+    "pdfFooter": [
+      "1. GST/Tax additional as applicable",
+      "2. Branding charges for single colour logo is included in the unit price",
+      "3. Logo set-up charges are applicable for first-time development of products/logo",
+      "4. Freight will be extra as applicable and mentioned depending upon the shipping geographies",
+      "5. Custom design branding is possible on request with high-resolution design file from the user but is also subject to minimum order quantities and printing capabilities.",
+      "6. Production Lead time is subject to order quantity and complexity of artwork."
+    ]
   },
   "banners": [
     {
