@@ -72,10 +72,13 @@
 
     try {
       const d = await api('login', { username, password });
-      Auth.set(d.token, { username: username.toLowerCase(), name: d.name, expires: d.expires, features: d.features || {} });
+      Auth.set(d.token, {
+        username: username.toLowerCase(), name: d.name, expires: d.expires,
+        features: d.features || {}, role: d.role || 'user', mustChange: !!d.must_change,
+      });
       status.style.color = 'var(--brand)';
       status.textContent = 'Signed in. Redirecting…';
-      location.href = params.get('next') || 'index.html';
+      location.href = d.must_change ? 'change-password.html' : (params.get('next') || 'index.html');
     } catch (err) {
       status.textContent = err.message || 'Sign-in failed. Check your connection and try again.';
       submitting = false;

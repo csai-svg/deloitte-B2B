@@ -70,7 +70,7 @@ async function api(fn, payload = {}) {
     res = await fetch(CONFIG.API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ fn, token: CONFIG.API_TOKEN, session: Auth.token(), ...payload }),
+      body: JSON.stringify({ fn, token: CONFIG.API_TOKEN, session: Auth.token(), brand: CONFIG.BRAND, ...payload }),
     });
   } catch (err) {
     /* fetch only rejects on a network-level failure, and the browser's own
@@ -108,7 +108,7 @@ function apiUpload(fn, payload = {}, onProgress) {
       err.transport = true;             // lets the caller retry over fetch
       reject(err);
     };
-    xhr.send(JSON.stringify({ fn, token: CONFIG.API_TOKEN, session: Auth.token(), ...payload }));
+    xhr.send(JSON.stringify({ fn, token: CONFIG.API_TOKEN, session: Auth.token(), brand: CONFIG.BRAND, ...payload }));
   });
 }
 
@@ -397,6 +397,7 @@ function refreshFeedCache() {
          while this tab stayed open — force a fresh login instead of
          quietly degrading to the bundled snapshot. */
       if (d && d.error === 'unauthorized') { Auth.clear(); location.href = 'login.html'; return; }
+      if (d && d.error === 'must_change_password') { location.href = 'change-password.html'; return; }
       if (d && Array.isArray(d.products) && d.products.length) { try { sessionStorage.setItem('cs_feed', JSON.stringify(d)); } catch (e) {} }
     })
     .catch(() => {});
@@ -421,6 +422,10 @@ async function loadCatalogueJSON() {
   if (fresh && fresh.error === 'unauthorized') {
     Auth.clear();
     location.href = 'login.html?expired=1';
+    return new Promise(() => {}); // navigating away; never resolve
+  }
+  if (fresh && fresh.error === 'must_change_password') {
+    location.href = 'change-password.html';
     return new Promise(() => {}); // navigating away; never resolve
   }
   if (!fresh || !Array.isArray(fresh.products) || !fresh.products.length) {
@@ -514,6 +519,13 @@ const Auth = {
     sessionStorage.setItem('cs_session', token);
     sessionStorage.setItem('cs_user', JSON.stringify(user));
   },
+  /* Client-side role/must-change are only ever used to show or hide UI —
+     every admin_* endpoint re-checks the real role server-side on every
+     call (requireRoleSession_ in Code.gs), so trusting this value for
+     anything but paint decisions is safe. */
+  role() { const u = this.user(); return (u && u.role) || 'user'; },
+  isAdmin() { return this.role() === 'admin' || this.role() === 'super_admin'; },
+  mustChange() { const u = this.user(); return !!(u && u.mustChange); },
   clear() {
     /* Agent Merch's quote history holds client-facing prices and lives in
        localStorage (which outlives the tab, unlike sessionStorage) keyed
@@ -1004,7 +1016,10 @@ function header(active) {
         el('button', { type: 'submit', 'aria-label': 'Search', html: ICONS.search })),
       el('div', { class: 'head-icons' },
         u ? el('span', { class: 'small', style: 'font-size:12px;margin-right:8px;color:var(--muted,#666)' },
-          'Hi, ' + (u.name || u.username)) : null,
+          'Hi, ' + (u.name || u.username),
+          Auth.isAdmin() ? el('span', {
+            class: 'pill', style: 'margin-left:6px;padding:1px 7px;font-size:10px;text-transform:uppercase',
+          }, Auth.role() === 'super_admin' ? 'Super admin' : 'Admin') : null) : null,
         u ? el('button', {
           class: 'link-quiet', type: 'button', title: 'Sign out',
           style: 'font-size:12px;background:none;border:none;cursor:pointer',
@@ -1027,6 +1042,10 @@ function header(active) {
         u && u.features && u.features.agentMerch
           ? el('a', { class: 'catnav-top nav-kit' + (active === 'Agent' ? ' on' : ''), href: 'agent.html' },
               'Agent Merch')
+          : null,
+        Auth.isAdmin()
+          ? el('a', { class: 'catnav-top nav-kit' + (active === 'Admin' ? ' on' : ''), href: 'admin.html' },
+              'Admin')
           : null)));
 }
 
@@ -1092,6 +1111,7 @@ function openMenu(active) {
     el('div', { class: 'menu-body' },
       u ? el('div', { class: 'menu-group' },
         el('div', { class: 'small', style: 'padding:6px 4px;color:var(--muted,#666)' }, 'Hi, ' + (u.name || u.username)),
+        el('a', { class: 'menu-cat', href: 'change-password.html' }, 'Change password'),
         el('a', { class: 'menu-cat', href: '#', onclick: e => { e.preventDefault(); Auth.logout(); } }, 'Sign out')) : null,
 
       cats.map(c => el('div', { class: 'menu-group' },
@@ -1119,6 +1139,11 @@ function openMenu(active) {
       u && u.features && u.features.agentMerch
         ? el('div', { class: 'menu-group' },
             el('a', { class: 'menu-cat' + (active === 'Agent' ? ' on' : ''), href: 'agent.html' }, 'Agent Merch'))
+        : null,
+
+      Auth.isAdmin()
+        ? el('div', { class: 'menu-group' },
+            el('a', { class: 'menu-cat' + (active === 'Admin' ? ' on' : ''), href: 'admin.html' }, 'Admin'))
         : null,
 
       ));
