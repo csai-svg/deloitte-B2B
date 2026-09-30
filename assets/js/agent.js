@@ -676,12 +676,18 @@ const AgentApp = (function () {
       if (!kit.isCollection && !noPrice) {
         const total = kitTotal(kit);
         const usedRows = row + 1;
-        const totalY = rowY + usedRows * (cardH + gapY) + 4;
-        if (totalY < pageH - 45) {
-          pdf.setFont(undefined, 'bold'); pdf.setFontSize(10);
-          pdf.text('Total: ' + fmtPdf(total) + '/- + GST + FREIGHT', pageW / 2, totalY, { align: 'center' });
-          pdf.setFont(undefined, 'normal');
+        let totalY = rowY + usedRows * (cardH + gapY) + 4;
+        // A kit whose last page is fully packed leaves no room for the
+        // total line — rather than silently dropping it, give it a fresh
+        // page rather than let it collide with (or hide behind) the footer.
+        if (totalY >= pageH - 45) {
+          addFooter(); pdf.addPage(); page++;
+          addHeader(kit.name);
+          totalY = 50;
         }
+        pdf.setFont(undefined, 'bold'); pdf.setFontSize(10);
+        pdf.text('Total: ' + fmtPdf(total) + '/- + GST + FREIGHT', pageW / 2, totalY, { align: 'center' });
+        pdf.setFont(undefined, 'normal');
       }
       addFooter();
       if (ki < selectedKits.length - 1) { pdf.addPage(); page++; }
