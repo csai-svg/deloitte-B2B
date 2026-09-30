@@ -7,11 +7,12 @@ Static frontend on GitHub Pages, one Google Sheet as the catalogue (and the
 credential store), one Apps Script web app as the feed, login gate and
 submission endpoint. No server, no framework, no build step.
 
-There is **no signup, no self-service password reset, and no order
-tracking**. A visitor signs in with a username/password an ASM issued them,
-browses, builds a cart or a kit, and submits a request; that request lands as
-one row on the `Cart Enquiries` tab for an ASM to pick up. There is no
-approval workflow and no payment.
+There is **no signup and no order tracking**. A visitor signs in with a
+username/password an admin issued them, browses, builds a cart or a kit, and
+submits a request; that request lands as one row on the `Cart Enquiries` tab
+for an ASM to pick up. There is no approval workflow and no payment. Password
+resets are now self-service (see "Changing your own password" below) plus an
+admin-issued reset for a locked-out user — see "Admin portal" below.
 
 **The catalogue is genuinely gated, not client-side theatre.** No product or
 price data is ever bundled into this repo (see `.gitignore`) — every page
@@ -23,17 +24,21 @@ anything without a valid session token. See "Login gate" below.
 ## What is here
 
 ```
-login.html        username + password sign-in, the only unauthenticated page
-index.html        landing: banner, categories, a featured strip
-all.html          whole catalogue, search + filter rail
-category.html     one category, subcategory filters
-product.html      detail, colour/variant picker, tier calculator, MOQ gate
-event-kits.html   one occasion (Sustainability, Festive Gift Kits)
-preset-kits.html  the ready-made Gift Box products
-kit.html          build-a-kit: headcount and budget in, a kit out
-cart.html         cart, MOQ enforcement, submits the request
-agent.html        Agent Merch: internal kit-builder + PDF quotation tool,
-                  gated to CompanyStore sales agents only — see below
+login.html            username + password sign-in, the only unauthenticated page
+index.html            landing: banner, categories, a featured strip
+all.html              whole catalogue, search + filter rail
+category.html         one category, subcategory filters
+product.html          detail, colour/variant picker, tier calculator, MOQ gate
+event-kits.html       one occasion (Sustainability, Festive Gift Kits)
+preset-kits.html      the ready-made Gift Box products
+kit.html              build-a-kit: headcount and budget in, a kit out
+cart.html             cart, MOQ enforcement, submits the request
+agent.html            Agent Merch: internal kit-builder + PDF quotation tool,
+                      gated to CompanyStore sales agents only — see below
+admin.html            admin portal: user management, roles, audit log —
+                      gated to admin/super_admin roles only — see below
+change-password.html  self-service password change (also the forced
+                      "set a new password" screen after an admin resets one)
 
 assets/taxonomy.json    per-SKU category override (hand-maintained)
 assets/colorways.json   curated colour groups (hand-maintained)
@@ -43,8 +48,9 @@ assets/kits/kits.json   occasion photography, keyed by slug
 assets/css/app.css      Deloitte palette, all tokens in :root
 assets/js/app.js        catalogue, pricing engine, filters, page chrome, auth
 assets/js/agent.js      Agent Merch's kit generation, PDF export and quote history — not loaded outside agent.html
+assets/js/admin.js      admin portal: user list/drawers, roles, audit log — not loaded outside admin.html
 
-apps-script-feed/Code.gs   the backend: login gate, catalogue feed, request intake
+apps-script-feed/Code.gs   the backend: login gate, catalogue feed, request intake, admin portal
 scripts/                   image tooling (not deployed)
 ```
 
@@ -74,24 +80,135 @@ username/password ──► Code.gs doPost({fn:'login'}) ──► Login sheet t
 ```
 
 Credentials live in the **`Login`** tab of the same spreadsheet the catalogue
-feed reads, next to `Cart Enquiries` (where submitted requests land). There
-is no signup and no self-service reset: an ASM manages rows directly.
+feed reads, next to `Cart Enquiries` (where submitted requests land). Rows can
+be managed two ways, interchangeably: through `admin.html` (see "Admin
+portal" below) or directly in the sheet, same as before — the admin portal is
+additive, not a replacement for the sheet workflow.
 
-**Login tab columns:** `username | password | password_hash | salt | active | name | email | company | last_login | notes | agent_access`
+**Login tab columns:** `username | password | password_hash | salt | active | name | email | company | last_login | notes | agent_access | role | must_change_password | created_at | created_by | password_changed_at`
 
-**Adding a user (ASM workflow):** add a row, type a plain-text password into
-`password`, set `active` to `TRUE`, then from the spreadsheet's
-**Client Access > Hash new passwords** menu run the hash. That reads any row
-with a plain password and no hash yet, generates a random salt, stores
-`SHA-256(salt + password)` in `password_hash`, writes the salt, and clears the
-plain `password` cell — nothing plain-text is left sitting in the sheet.
-Setting `active` to `FALSE` disables a user immediately (same generic error
-as a wrong password, so a disabled account can't be enumerated).
+The last five are new, added for the admin portal. Every one of them is
+**optional** (resolved by `colOfOptional_`, same as `agent_access`): a sheet
+that lacks one, or any row with the cell blank, just means the
+least-privileged value for that row — `role` blank means `user`,
+`must_change_password` blank means no forced reset — so nothing about the
+existing rows or the plain sheet workflow breaks.
+
+| column | values | meaning |
+|---|---|---|
+| `role` | blank/`user`, `admin`, `super_admin` | portal role — see "Admin portal" |
+| `must_change_password` | `TRUE`/blank | forces `change-password.html` before the catalogue loads |
+| `created_at`, `created_by` | timestamp / username | who added the row and when (blank for rows created directly in the sheet) |
+| `password_changed_at` | timestamp | last time this row's password was set, by either path |
+
+**Adding a user by hand (still works exactly as before):** add a row, type a
+plain-text password into `password`, set `active` to `TRUE`, then from the
+spreadsheet's **Client Access > Hash new passwords** menu run the hash. That
+reads any row with a plain password and no hash yet, generates a random salt,
+stores `SHA-256(salt + password)` in `password_hash`, writes the salt, and
+clears the plain `password` cell — nothing plain-text is left sitting in the
+sheet. Setting `active` to `FALSE` disables a user immediately (same generic
+error as a wrong password, so a disabled account can't be enumerated). Leave
+`role` blank for an ordinary user.
+
+**Bootstrapping the (one) super admin:** there is deliberately no way to
+create or promote a super admin from the portal UI — a super admin can
+promote/demote between `user` and `admin` only, never grant or remove
+`super_admin`. To make someone (e.g. yourself, from IT) the super admin,
+open the `Login` tab and type `super_admin` directly into their row's `role`
+cell. That is the only way a `super_admin` row is ever created, and the only
+way one is ever changed — every admin portal endpoint refuses to read *or*
+write a row whose role is `super_admin` on behalf of anyone but that row's
+own signed-in session (see "Admin portal" below), which is also what
+guarantees the portal itself can never delete the last one.
 
 **Brute force:** 5 wrong passwords locks that username out for 15 minutes
 (same generic error either way), plus a small delay on every failed attempt.
+An admin or super admin can clear a lockout early from `admin.html` ("Unlock").
 A Google Chat webhook (`CFG.WEBHOOK_URL` in `Code.gs`) posts on lockouts,
-successful sign-ins, and every cart/kit submission.
+successful sign-ins, every cart/kit submission, and (new) role changes,
+deactivations and bulk user imports.
+
+**Changing your own password:** anyone signed in can change their own
+password from the account menu ("Change password") without an admin's
+involvement — `change-password.html`, backed by `fn=change_password` in
+`Code.gs`. It asks for the current password (skipped only when
+`must_change_password` is set, since that flag itself only gets set by an
+admin action or a fresh account — the admin already effectively vouched for
+the new one) and requires the new one to be at least 10 characters. It
+revokes every other session for that user and signs the browser back in with
+a fresh one, so a changed password can't be brute-forced against a
+still-live old session elsewhere.
+
+## Admin portal
+
+`admin.html` lets an admin or super admin manage `Login` tab rows from a
+browser instead of editing the sheet directly — everything an ASM could
+already do by hand, plus role management for a super admin. There is **no
+separate admin password**: identity and role come from the signed-in user's
+own login session, re-checked on every single admin action.
+
+| Role | Typically | Can do |
+|---|---|---|
+| **Super admin** | one person, IT | Everything an admin can, plus promote/demote between `user` and `admin`, see the audit log, sign out any user's live sessions everywhere |
+| **Admin** | CompanyStore account managers | Add users (one at a time or bulk import), edit them, activate/deactivate, issue a temporary password, unlock a locked-out user, toggle Agent Merch access — for `user`-role accounts only |
+| **User** | everyone else | Today's view-only store; some also carry `agent_access` (a separate flag, unrelated to role) |
+
+**Where things live:**
+
+- Nine new endpoints in `Code.gs`, all POST, all Deloitte-brand-checked, all
+  behind `requireRoleSession_` (which re-reads the *caller's own* `Login` row
+  on every call — never trusts the role cached in the session token, so a
+  demoted or deactivated admin loses portal access immediately, not up to
+  `SESSION_TTL_SECS` later): `admin_users`, `admin_add_user`,
+  `admin_bulk_users`, `admin_update_user`, `admin_set_active`,
+  `admin_reset_password`, `admin_unlock_user`, `admin_revoke_sessions`
+  (super admin only), `admin_audit` (super admin only). Plus
+  `fn=change_password`, open to any signed-in user (see above).
+- **Target-row rules, enforced server-side on the row's current state, not
+  just the caller's:** an admin may only add/edit/deactivate/reset/unlock a
+  row whose role is `user`; only a super admin may do any of that to an
+  `admin` row; **nobody** — including a super admin — can touch a
+  `super_admin` row through the portal at all, and nobody can
+  deactivate/demote/reset their own account through the portal (self-service
+  password change is the only way to change your own credentials). See
+  `assertCanManageTarget_` in `Code.gs`.
+- **Session revocation.** Every session now carries an `iat` (mint time). A
+  `rev_<username>` cache entry records the last time that username's
+  sessions were force-revoked; `requireSession_` rejects any session minted
+  at or before that mark. Deactivating a user, changing their role,
+  resetting their password, or a super admin's "Sign out everywhere" all
+  write that marker — so the effect is immediate on that person's *next*
+  request, not after the session's TTL runs out.
+  `handleChangePassword_` mints a fresh token for the caller's own browser
+  right after revoking, so changing your own password doesn't lock you out.
+- **`Admin Audit` tab** (auto-created on first use, same pattern as `Agent
+  Capture`): `timestamp | actor | actor_role | action | target | detail`.
+  Every admin endpoint writes a row on success *and* on denial (as
+  `denied_<fn>`) — see `auditLog_` / `withAdminSession_` in `Code.gs`. A
+  password is never written here, to the sheet elsewhere, to the Chat
+  webhook, or returned by any endpoint except the one-time
+  `generated_password` field on `admin_add_user`/`admin_bulk_users`/
+  `admin_reset_password` when the server (not the admin) generated it.
+- **Formula-injection guard.** Every free-text field an admin types in
+  (name, email, company, notes) is passed through `sanitizeCell_` before it
+  reaches the sheet: a value starting with `=`, `+`, `-`, `@` or a tab is
+  prefixed with `'` so a spreadsheet never reads it as a formula.
+- **Concurrency.** Every write path (`admin_add_user`, `admin_bulk_users`,
+  and every field/role/status/password change) runs inside
+  `LockService.getScriptLock()`, so two admins adding the same username at
+  once — or any two writes racing each other — can't collide or produce a
+  duplicate row.
+- `admin.js` mirrors the RSM console's `drawer()`/`toggle()`/`overflowMenu()`
+  UX pattern (vanilla JS, no library) but **not** its auth model — RSM gates
+  its whole console with one shared typed-in `ADMIN_PASS`; this portal has no
+  equivalent, because identity here already comes from the normal login
+  session.
+
+**Redeploy note:** the new columns and every `admin_*`/`change_password`
+endpoint only take effect after `Code.gs` is redeployed — see "Backend"
+under Deploy below. Editing the Apps Script source alone does not update the
+live `/exec` URL.
 
 ## Agent Merch (internal, gated)
 
