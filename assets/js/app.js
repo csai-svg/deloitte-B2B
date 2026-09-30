@@ -515,6 +515,15 @@ const Auth = {
     sessionStorage.setItem('cs_user', JSON.stringify(user));
   },
   clear() {
+    /* Agent Merch's quote history holds client-facing prices and lives in
+       localStorage (which outlives the tab, unlike sessionStorage) keyed
+       per username — wipe it here so it never survives past this user's
+       session, whether that's an explicit logout or the session expiring
+       mid-visit (both paths funnel through this one function). */
+    try {
+      const u = this.user();
+      if (u && u.username) localStorage.removeItem('am_history_' + u.username);
+    } catch (e) {}
     sessionStorage.removeItem('cs_session');
     sessionStorage.removeItem('cs_user');
   },
@@ -1014,7 +1023,11 @@ function header(active) {
         el('a', { class: 'catnav-top nav-kit' + (active === 'PresetKits' ? ' on' : ''), href: 'preset-kits.html' },
           'Preset Kits'),
         el('a', { class: 'catnav-top nav-kit' + (active === 'TopSelling' ? ' on' : ''), href: 'all.html?top_selling=1' },
-          'Deloitte Top Selling'))));
+          'Deloitte Top Selling'),
+        u && u.features && u.features.agentMerch
+          ? el('a', { class: 'catnav-top nav-kit' + (active === 'Agent' ? ' on' : ''), href: 'agent.html' },
+              'Agent Merch')
+          : null)));
 }
 
 /* The six curated occasions (New Joinee Program, Employee Recognition &
@@ -1102,6 +1115,11 @@ function openMenu(active) {
 
       el('div', { class: 'menu-group' },
         el('a', { class: 'menu-cat' + (active === 'TopSelling' ? ' on' : ''), href: 'all.html?top_selling=1' }, 'Deloitte Top Selling')),
+
+      u && u.features && u.features.agentMerch
+        ? el('div', { class: 'menu-group' },
+            el('a', { class: 'menu-cat' + (active === 'Agent' ? ' on' : ''), href: 'agent.html' }, 'Agent Merch'))
+        : null,
 
       ));
 

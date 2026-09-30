@@ -72,7 +72,7 @@
 
     try {
       const d = await api('login', { username, password });
-      Auth.set(d.token, { username: username.toLowerCase(), name: d.name, expires: d.expires });
+      Auth.set(d.token, { username: username.toLowerCase(), name: d.name, expires: d.expires, features: d.features || {} });
       status.style.color = 'var(--brand)';
       status.textContent = 'Signed in. Redirecting…';
       location.href = params.get('next') || 'index.html';

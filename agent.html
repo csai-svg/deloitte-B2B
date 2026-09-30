@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>
+(function () {
+  if (!sessionStorage.getItem('cs_session')) { location.replace('login.html?next=agent.html'); return; }
+  try {
+    var u = JSON.parse(sessionStorage.getItem('cs_user') || 'null');
+    if (!u || !u.features || !u.features.agentMerch) location.replace('index.html');
+  } catch (e) { location.replace('index.html'); }
+})();
+</script>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Agent Merch | Deloitte Merchandise Store</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+<main class="wrap">
+  <div class="page-head">
+    <span class="am-internal-tag">Internal — for CompanyStore sales team</span>
+    <h1>Agent Merch</h1>
+    <p class="muted">Build kits or collections from the Deloitte catalogue at your quantity and markup, then export a branded PDF quotation for a client.</p>
+  </div>
+
+  <section class="home-sec">
+    <div class="panel">
+      <h2>Kit configuration</h2>
+      <div class="am-form-grid">
+        <label class="field"><span>Budget per kit (optional if using price range)</span>
+          <input type="number" min="0" step="1" id="cfgBudget"></label>
+        <label class="field"><span>Min kit price</span>
+          <input type="number" min="0" step="1" id="cfgMinPrice"></label>
+        <label class="field"><span>Max kit price</span>
+          <input type="number" min="0" step="1" id="cfgMaxPrice"></label>
+        <label class="field"><span>Number of kits</span>
+          <input type="number" min="1" step="1" id="cfgKitCount" placeholder="Auto"></label>
+        <label class="field"><span>Products per kit</span>
+          <input type="number" min="1" step="1" id="cfgProductsPerKit" placeholder="Auto"></label>
+        <label class="field"><span>Quantity per kit</span>
+          <input type="number" min="1" step="1" id="cfgQtyPerKit" value="50"></label>
+        <label class="field"><span>Markup %</span>
+          <input type="number" min="0" step="1" id="cfgMarkup" value="0"></label>
+        <label class="field"><span>Max MOQ</span>
+          <input type="number" min="0" step="1" id="cfgMaxMOQ" placeholder="No limit"></label>
+      </div>
+      <label class="row" style="gap:8px;margin:8px 0 18px">
+        <input type="checkbox" id="cfgHidePrices"> <span class="small">Hide prices (browse-only kits / PDF)</span>
+      </label>
+
+      <div class="am-filter-block">
+        <div class="row-between">
+          <h3 class="am-h3">Categories</h3>
+          <label class="row small" style="gap:6px"><input type="checkbox" id="cfgCatMode"> AND mode (force one of each into every kit)</label>
+        </div>
+        <div id="cfgCategories" class="am-check-row"></div>
+      </div>
+
+      <div class="am-filter-block">
+        <h3 class="am-h3">Product tags</h3>
+        <div id="cfgTags" class="am-check-row"></div>
+      </div>
+
+      <div class="am-filter-block">
+        <h3 class="am-h3">Event types</h3>
+        <div id="cfgEventTags" class="am-check-row"></div>
+      </div>
+
+      <div class="am-filter-block">
+        <div class="row-between">
+          <h3 class="am-h3">Required products (forced into every kit)</h3>
+          <button class="btn btn-ghost btn-sm" type="button" id="btnPickRequired">Select required products</button>
+        </div>
+        <div id="requiredProductsList" class="am-req-list"></div>
+      </div>
+
+      <div class="row" style="gap:10px;flex-wrap:wrap;margin-top:18px">
+        <button class="btn" type="button" id="btnGenerate">Generate kits</button>
+        <button class="btn btn-ghost" type="button" id="btnCollections">Create collections</button>
+        <button class="btn btn-ghost" type="button" id="btnManualKit">Create manual kit</button>
+        <button class="btn btn-ghost" type="button" id="btnReset">Reset</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="home-sec" id="resultsSection" style="display:none">
+    <div class="panel">
+      <h2>Results</h2>
+      <div class="row" style="gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+        <label class="field" style="margin-bottom:0;min-width:220px"><span>PDF title</span>
+          <input type="text" id="pdfTitleInput" value="Kit Suggestions"></label>
+        <label class="field" style="margin-bottom:0;min-width:220px"><span>Client name <span class="req">*</span></span>
+          <input type="text" id="clientNameInput" placeholder="Client / company name"></label>
+        <label class="row small" style="gap:6px;margin-bottom:14px">
+          <input type="checkbox" id="includeLogoCheckbox" checked> Include logo</label>
+      </div>
+      <div class="row" style="gap:10px;flex-wrap:wrap;margin-bottom:14px">
+        <button class="btn btn-ghost btn-sm" type="button" id="btnSelectAll">Select all</button>
+        <button class="btn btn-ghost btn-sm" type="button" id="btnDeselectAll">Deselect all</button>
+        <button class="btn btn-ghost btn-sm" type="button" id="btnShowSelected">Show only selected</button>
+        <button class="btn btn-ghost btn-sm" type="button" id="btnLoadMore" style="display:none">Load more kits</button>
+        <button class="btn" type="button" id="btnExportPdf">Export PDF</button>
+      </div>
+      <div id="resultsSummary" class="small muted" style="margin-bottom:14px"></div>
+      <div id="kitList"></div>
+    </div>
+  </section>
+
+  <section class="home-sec">
+    <div class="panel">
+      <div class="row-between">
+        <h2 style="margin:0">Quote history</h2>
+        <button class="btn btn-ghost btn-sm" type="button" id="btnClearHistory">Clear history</button>
+      </div>
+      <div id="historyList" class="small"></div>
+    </div>
+  </section>
+</main>
+
+<script src="assets/js/app.js"></script>
+<script src="assets/js/agent.js"></script>
+<script>
+(async function () {
+  await Catalog.load();
+  mount('Agent');
+  AgentApp.init();
+})();
+</script>
+</body>
+</html>
