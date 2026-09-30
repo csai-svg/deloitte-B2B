@@ -8,8 +8,8 @@ const CONFIG = {
   // Apps Script Web App /exec URL (apps-script-feed/Code.gs). Same URL serves
   // the live catalogue (GET ?fn=catalog) and receives login/logout/cart
   // submissions (POST).
-  FEED_URL: 'https://script.google.com/macros/s/AKfycbzNmMUxZWR7TtSGZYY0QS4Ld0oJ2QCs-OYB6cmOmBdHftrnZQdQkebt3ww-pbe11_BShA/exec',
-  API_URL: 'https://script.google.com/macros/s/AKfycbzNmMUxZWR7TtSGZYY0QS4Ld0oJ2QCs-OYB6cmOmBdHftrnZQdQkebt3ww-pbe11_BShA/exec',
+  FEED_URL: 'https://script.google.com/macros/s/AKfycbzVTDZQNd4gu5CZzSyvDgUw2CbMOuntBF8-NY55fvJnt4rrO_oi_t1ZCjQ3fShIF4j2Cg/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbzVTDZQNd4gu5CZzSyvDgUw2CbMOuntBF8-NY55fvJnt4rrO_oi_t1ZCjQ3fShIF4j2Cg/exec',
   API_TOKEN: '',
   CURRENCY: '₹',
   BRAND: 'Deloitte',
