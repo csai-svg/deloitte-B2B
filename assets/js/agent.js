@@ -330,7 +330,12 @@ const AgentApp = (function () {
   }
 
   function renderKitCard(kit, idx) {
-    const cfg = state.lastConfig || readConfig();
+    const baseCfg = state.lastConfig || readConfig();
+    // Hiding prices is a pure display toggle, independent of the prices
+    // computed at generation time — read it live so flipping the checkbox
+    // takes effect immediately, with no need to regenerate the kits. Copy
+    // rather than mutate baseCfg, which may be the shared state.lastConfig.
+    const cfg = Object.assign({}, baseCfg, { hidePrices: document.getElementById('cfgHidePrices').checked });
     const products = kit.isCollection ? kit.products.slice(0, kit.visibleCount) : kit.products;
 
     const card = el('div', { class: 'am-kit' },
@@ -604,7 +609,9 @@ const AgentApp = (function () {
     const title = document.getElementById('pdfTitleInput').value.trim() || 'Kit Suggestions';
     const includeLogo = document.getElementById('includeLogoCheckbox').checked;
     const cfg = state.lastConfig || readConfig();
-    const noPrice = cfg.hidePrices;
+    // Read live, same reasoning as renderKitCard — it's a display toggle,
+    // not something that requires regenerating the kits to take effect.
+    const noPrice = document.getElementById('cfgHidePrices').checked;
 
     if (!state.currentQuoteId) state.currentQuoteId = newQuoteId();
     state.currentQuoteClient = clientName;
