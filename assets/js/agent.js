@@ -323,19 +323,20 @@ const AgentApp = (function () {
     document.getElementById('resultsSummary').textContent =
       total + ' kit(s) generated, ' + selected + ' selected for PDF.';
 
+    // Hiding prices is a pure display toggle, independent of the prices
+    // computed at generation time — read it live (once per render, shared
+    // by every kit card) so flipping the checkbox takes effect immediately
+    // with no need to regenerate the kits.
+    const cfg = Object.assign({}, state.lastConfig || readConfig(), { hidePrices: isHidePricesOn() });
     state.kits.forEach((kit, idx) => {
       if (state.showOnlySelected && !kit.includeInPdf) return;
-      list.appendChild(renderKitCard(kit, idx));
+      list.appendChild(renderKitCard(kit, idx, cfg));
     });
   }
 
-  function renderKitCard(kit, idx) {
-    const baseCfg = state.lastConfig || readConfig();
-    // Hiding prices is a pure display toggle, independent of the prices
-    // computed at generation time — read it live so flipping the checkbox
-    // takes effect immediately, with no need to regenerate the kits. Copy
-    // rather than mutate baseCfg, which may be the shared state.lastConfig.
-    const cfg = Object.assign({}, baseCfg, { hidePrices: document.getElementById('cfgHidePrices').checked });
+  function isHidePricesOn() { return document.getElementById('cfgHidePrices').checked; }
+
+  function renderKitCard(kit, idx, cfg) {
     const products = kit.isCollection ? kit.products.slice(0, kit.visibleCount) : kit.products;
 
     const card = el('div', { class: 'am-kit' },
@@ -495,7 +496,7 @@ const AgentApp = (function () {
         el('h3', { style: 'margin:0' }, title),
         el('button', { type: 'button', onclick: closeModal }, '×')),
       el('div', { class: 'row', style: 'gap:10px;margin-bottom:12px;flex-wrap:wrap' },
-        el('input', { type: 'text', placeholder: 'Search…', style: 'max-width:220px', oninput: e => { q = e.target.value; paint(); } }),
+        el('input', { type: 'text', placeholder: 'Search…', style: 'max-width:220px', oninput: debounce_(e => { q = e.target.value; paint(); }, 200) }),
         el('select', { onchange: e => { catFilter = e.target.value; paint(); } },
           el('option', { value: '' }, 'All categories'),
           cats.map(c => el('option', { value: c }, c)))),
@@ -609,9 +610,9 @@ const AgentApp = (function () {
     const title = document.getElementById('pdfTitleInput').value.trim() || 'Kit Suggestions';
     const includeLogo = document.getElementById('includeLogoCheckbox').checked;
     const cfg = state.lastConfig || readConfig();
-    // Read live, same reasoning as renderKitCard — it's a display toggle,
-    // not something that requires regenerating the kits to take effect.
-    const noPrice = document.getElementById('cfgHidePrices').checked;
+    // Read live, same reasoning as render() — it's a display toggle, not
+    // something that requires regenerating the kits to take effect.
+    const noPrice = isHidePricesOn();
 
     if (!state.currentQuoteId) state.currentQuoteId = newQuoteId();
     state.currentQuoteClient = clientName;
@@ -625,7 +626,15 @@ const AgentApp = (function () {
     const contentW = pageW - margin * 2;
     const footerLines = Site.get('pdfFooter', []);
     let logoB64 = null;
-    if (includeLogo) logoB64 = await getImageBase64(Site.get('logo_url', 'assets/brand/logo.png'));
+    // Fetch every distinct product image in parallel before laying out any
+    // page — getImageBase64 already caches by URL, so a serial await inside
+    // the nested kit/product loop below would make export time scale with
+    // product count x network latency instead of the slowest single fetch.
+    const distinctUrls = new Set();
+    selectedKits.forEach(k => k.products.forEach(p => { if (p.image) distinctUrls.add(p.image); }));
+    const prefetch = [...distinctUrls].map(url => getImageBase64(url));
+    if (includeLogo) prefetch.push(getImageBase64(Site.get('logo_url', 'assets/brand/logo.png')).then(b64 => { logoB64 = b64; }));
+    await Promise.all(prefetch);
 
     let page = 1;
     function addHeader(kitTitle) {
