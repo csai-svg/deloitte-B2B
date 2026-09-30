@@ -267,7 +267,16 @@ const AgentApp = (function () {
       .map(k => finalizeKit([...reqProducts, ...k.products], cfg));
     if (!more.length) { toast('No further unique combinations found.', 'info'); return; }
     state.kits = state.kits.concat(more);
-    state.kits.forEach((k, i) => { if (!k.isCollection && !k.isManual) k.name = k.name.startsWith('Kit ') ? 'Kit ' + (i + 1) : k.name; });
+    // Number only the generatable kits, sequentially among themselves —
+    // using their raw position in state.kits (which also holds any manual
+    // kit or collection interleaved by the agent) produced gaps/skips in
+    // the visible "Kit N" numbering as soon as anything else was mixed in.
+    let n = 0;
+    state.kits.forEach(k => {
+      if (k.isCollection || k.isManual) return;
+      n++;
+      if (k.name.startsWith('Kit ')) k.name = 'Kit ' + n;
+    });
     render();
   }
 
@@ -395,6 +404,7 @@ const AgentApp = (function () {
       el('img', { src: imgAt(p.image, 300), alt: p.name }),
       el('div', { class: 'name' }, p.name),
       el('div', { class: 'meta' }, (p.sku || 'MANUAL') + ' · MOQ ' + qty(p.moq || 0)),
+      p._isManual && p.description ? el('div', { class: 'meta' }, p.description) : null,
       cfg.hidePrices ? null : el('div', { class: 'price' }, money(p._price)),
       el('div', { class: 'row' },
         siblingCount ? el('button', { type: 'button', onclick: () => openVariants(p, kit) }, 'Show Variants (' + siblingCount + ')') : null,
@@ -415,11 +425,20 @@ const AgentApp = (function () {
   function bulkReplace(kit) {
     const cfg = state.lastConfig || readConfig();
     const cats = new Set(kit.products.filter(p => kit.sel.has(p._uid)).map(p => p.category));
-    const pool = basePool(cfg).filter(p => cats.has(p.category) && !kit.products.some(x => x.sku === p.sku));
+    // Tracks SKUs already spoken for — both the kit's untouched products and
+    // whatever this pass has already handed out — so two selected slots in
+    // the same category can never be assigned the same replacement (which
+    // would also leave them sharing one _uid, since map() would otherwise
+    // reuse the very same pool object reference for both).
+    const usedSkus = new Set(kit.products.filter(p => !kit.sel.has(p._uid)).map(p => p.sku));
+    const pool = basePool(cfg).filter(p => cats.has(p.category));
     kit.products = kit.products.map(p => {
       if (!kit.sel.has(p._uid)) return p;
-      const candidates = pool.filter(x => x.category === p.category);
-      return candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : p;
+      const candidates = pool.filter(x => x.category === p.category && !usedSkus.has(x.sku));
+      if (!candidates.length) return p;
+      const pick = candidates[Math.floor(Math.random() * candidates.length)];
+      usedSkus.add(pick.sku);
+      return priced(pick, cfg); // fresh copy + fresh _uid, never the shared pool reference
     });
     kit.sel = new Set();
     render();
@@ -531,9 +550,10 @@ const AgentApp = (function () {
             const name = nameI.value.trim();
             if (!name) { toast('Enter a product name.', 'error'); return; }
             const manual = {
-              sku: '', name, moq: Number(moqI.value) || 0, category: descI.value.trim() || 'Custom',
+              sku: '', name, moq: Number(moqI.value) || 0, category: 'Custom', description: descI.value.trim(),
               image: imgI.value.trim() || PLACEHOLDER_IMG, tiers: [], base_price: Number(priceI.value) || 0,
-              _uid: 'manual:' + Date.now(), _price: Number(priceI.value) || 0, _pending: true, _isManual: true,
+              _uid: 'manual:' + Date.now() + ':' + Math.random().toString(36).slice(2, 8),
+              _price: Number(priceI.value) || 0, _pending: true, _isManual: true,
             };
             kit.products.push(manual);
             closeModal(); render();
