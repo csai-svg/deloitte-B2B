@@ -309,7 +309,141 @@ function loginCols_(header) {
     // purpose: a sheet that doesn't have this column yet (or any row with
     // the cell blank) just means "no agent access", never a broken login.
     agentAccess: colOfOptional_(header, 'agent_access'),
+    // Admin portal columns (all optional — a sheet that lacks one of these
+    // just means "least-privileged value" for every row, never a broken
+    // login). See README "Login tab" section for exactly what to type.
+    role: colOfOptional_(header, 'role'),
+    mustChange: colOfOptional_(header, 'must_change_password'),
+    createdAt: colOfOptional_(header, 'created_at'),
+    createdBy: colOfOptional_(header, 'created_by'),
+    pwChangedAt: colOfOptional_(header, 'password_changed_at'),
   };
+}
+
+/* ------------------------------------------------------------------
+   Admin portal: roles, target-row guards, audit log, sheet-write helpers.
+   ------------------------------------------------------------------ */
+
+var ROLE_RANK = { user: 0, admin: 1, super_admin: 2 };
+
+/* Blank cell -> 'user'. Anything not recognised also falls back to 'user'
+   rather than throwing, so a typo in the sheet degrades to least privilege
+   instead of breaking that person's login. */
+function normalizeRole_(raw) {
+  var r = String(raw || '').trim().toLowerCase();
+  return (r === 'admin' || r === 'super_admin') ? r : 'user';
+}
+
+function roleAtLeast_(role, min) {
+  return (ROLE_RANK[role] || 0) >= (ROLE_RANK[min] || 0);
+}
+
+function isActiveCell_(v) {
+  return /^\s*(true|yes|1)\s*$/i.test(String(v || ''));
+}
+
+function boolCell_(v) {
+  return /^\s*(true|yes|1)\s*$/i.test(String(v || ''));
+}
+
+/* Formula-injection guard: any string written to the sheet from user input
+   is neutralised if it starts with a character a spreadsheet would read as
+   the start of a formula. Applied to every free-text field an admin types
+   into the portal (name, email, company, notes, username). */
+function sanitizeCell_(v) {
+  var s = String(v == null ? '' : v);
+  if (/^[=+\-@\t]/.test(s)) return "'" + s;
+  return s;
+}
+
+function usernameValid_(u) {
+  return /^[a-z0-9._-]{3,40}$/.test(String(u || ''));
+}
+
+function emailValid_(e) {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(e || '').trim());
+}
+
+/* 16 random alnum chars, safe to hand out once as a temporary password. */
+function randomPassword_() {
+  var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  var out = '';
+  for (var i = 0; i < 16; i++) out += chars.charAt(Math.floor(Math.random() * chars.length));
+  return out;
+}
+
+var ADMIN_AUDIT_SHEET = 'Admin Audit';
+
+/* Every admin endpoint calls this, success or denial. Never pass a password,
+   hash or salt in `detail`. */
+function auditLog_(actor, actorRole, action, target, detail) {
+  try {
+    var ss = SpreadsheetApp.getActive();
+    var sh = ss.getSheetByName(ADMIN_AUDIT_SHEET);
+    if (!sh) {
+      sh = ss.insertSheet(ADMIN_AUDIT_SHEET);
+      sh.appendRow(['timestamp', 'actor', 'actor_role', 'action', 'target', 'detail']);
+    }
+    sh.appendRow([new Date(), actor || '', actorRole || '', action || '', target || '',
+      detail ? JSON.stringify(detail) : '']);
+  } catch (err) {
+    Logger.log('auditLog_ failed: ' + err);
+  }
+}
+
+/* Session revocation: requireSession_ rejects any session minted (session.iat)
+   before the last time this username's sessions were revoked. Call whenever a
+   user is deactivated, has their role changed, has their password reset, or a
+   super admin clicks "Sign out everywhere". TTL matches SESSION_TTL_SECS so the
+   revocation marker never outlives every session it could apply to. */
+function revokeSessions_(usernameKey) {
+  CacheService.getScriptCache().put('rev_' + usernameKey, String(Date.now()), CFG.SESSION_TTL_SECS);
+}
+
+function revokedAt_(usernameKey) {
+  var v = CacheService.getScriptCache().get('rev_' + usernameKey);
+  return v ? Number(v) : 0;
+}
+
+/* Re-reads the caller's OWN Login row on every admin call — never trusts the
+   role cached in the session — so a demoted or deactivated admin loses
+   access immediately rather than up to SESSION_TTL_SECS later. Returns
+   {session, rec, role} on success, or null (treat exactly like
+   requireSession_ returning null: generic 'unauthorized', no distinction
+   between "not signed in" and "signed in but insufficient role"). */
+function requireRoleSession_(token, minRole) {
+  var session = requireSession_(token);
+  if (!session) return null;
+  var rec;
+  try { rec = findLoginRow_(session.username); } catch (err) { return null; }
+  if (!rec) return null;
+  if (!isActiveCell_(rec.row[rec.ci.active])) return null;
+  var role = rec.ci.role >= 0 ? normalizeRole_(rec.row[rec.ci.role]) : 'user';
+  if (!roleAtLeast_(role, minRole)) return null;
+  return { session: session, rec: rec, role: role };
+}
+
+/* Enforces the "admin may only act on user rows; only super_admin may touch
+   admin rows; nobody may touch a super_admin row or their own account
+   through the portal" rules from the target row's actual current state.
+   Throws a plain Error (callers catch it and audit a denial) rather than
+   returning a value, so a missed check fails loud in testing. */
+function assertCanManageTarget_(callerRole, callerUsername, targetUsername, targetRole) {
+  if (targetUsername === callerUsername) throw new Error('unauthorized');
+  if (targetRole === 'super_admin') throw new Error('unauthorized');
+  if (callerRole === 'admin' && targetRole !== 'user') throw new Error('unauthorized');
+}
+
+/* Appends a row to the Login sheet, writing only the columns present in `ci`
+   (so an optional column absent from this sheet is simply left blank rather
+   than causing a misaligned write). `values` is {ciKeyName: value}. */
+function appendLoginRow_(sh, ci, values) {
+  var rowIndex = sh.getLastRow() + 1;
+  for (var key in values) {
+    if (!(key in ci) || ci[key] < 0) continue;
+    sh.getRange(rowIndex, ci[key] + 1).setValue(values[key]);
+  }
+  return rowIndex;
 }
 
 function sha256Hex_(s) {
@@ -420,7 +554,15 @@ function requireSession_(token) {
   if (!token) return null;
   var raw = CacheService.getScriptCache().get('sess_' + token);
   if (!raw) return null;
-  try { return JSON.parse(raw); } catch (err) { return null; }
+  var session;
+  try { session = JSON.parse(raw); } catch (err) { return null; }
+  // A revocation (deactivation, role change, password reset, explicit
+  // "sign out everywhere") invalidates every session minted before it, so a
+  // session cached client-side can't outlive a change made server-side.
+  // <= , not <: a revocation minted in the same millisecond as the session
+  // it targets (easily hit under fast automated calls) must still kill it.
+  if (session.iat && session.iat <= revokedAt_(session.username)) return null;
+  return session;
 }
 
 /* Same session lookup as requireSession_, plus the agent_access flag
@@ -479,16 +621,25 @@ function handleLogin_(body) {
   var company = String(rec.row[rec.ci.company] || '').trim();
   var agentAccess = rec.ci.agentAccess >= 0 &&
     /^\s*(true|yes|1)\s*$/i.test(String(rec.row[rec.ci.agentAccess] || ''));
+  var role = rec.ci.role >= 0 ? normalizeRole_(rec.row[rec.ci.role]) : 'user';
+  var mustChange = rec.ci.mustChange >= 0 && boolCell_(rec.row[rec.ci.mustChange]);
   var token = Utilities.getUuid();
-  var expires = Date.now() + CFG.SESSION_TTL_SECS * 1000;
+  var iat = Date.now();
+  var expires = iat + CFG.SESSION_TTL_SECS * 1000;
   CacheService.getScriptCache().put('sess_' + token,
-    JSON.stringify({ username: usernameKey, name: name, email: email, company: company, agentAccess: agentAccess }),
+    JSON.stringify({
+      username: usernameKey, name: name, email: email, company: company,
+      agentAccess: agentAccess, role: role, mustChange: mustChange, iat: iat,
+    }),
     CFG.SESSION_TTL_SECS);
 
   try { rec.sheet.getRange(rec.rowIndex, rec.ci.lastLogin + 1).setValue(new Date()); } catch (err) {}
   notifyWebhook_('✅ *' + name + '* (' + usernameKey + ') signed in to the Deloitte store.');
 
-  return jsonOut_({ ok: true, token: token, name: name, expires: expires, features: { agentMerch: agentAccess } });
+  return jsonOut_({
+    ok: true, token: token, name: name, expires: expires, role: role, must_change: mustChange,
+    features: { agentMerch: agentAccess },
+  });
 }
 
 function handleLogout_(body) {
@@ -500,8 +651,13 @@ function doGet(e) {
   var p = (e && e.parameter) || {};
   if (CFG.TOKEN && p.token !== CFG.TOKEN) return jsonOut_({ error: 'unauthorized' }, p.callback);
   var brand = normalizeBrand_(p.brand);
-  if (brand === 'Deloitte' && CFG.REQUIRE_LOGIN && !requireSession_(p.session)) {
-    return jsonOut_({ error: 'unauthorized' }, p.callback);
+  if (brand === 'Deloitte' && CFG.REQUIRE_LOGIN) {
+    var gsession = requireSession_(p.session);
+    if (!gsession) return jsonOut_({ error: 'unauthorized' }, p.callback);
+    // Catalogue stays unreachable until a forced password change is done —
+    // same idea as an expired session, but a distinct error code so the
+    // client sends the visitor to change-password.html, not login.html.
+    if (gsession.mustChange) return jsonOut_({ error: 'must_change_password' }, p.callback);
   }
   var cache = CacheService.getScriptCache();
   var key = 'catalog_' + brand;
@@ -587,15 +743,416 @@ function doPost(e) {
     case 'kit_request':
       var brand = normalizeBrand_(body.brand);
       var session = requireSession_(body.session);
-      if (brand === 'Deloitte' && CFG.REQUIRE_LOGIN && !session) return jsonOut_({ ok: false, error: 'unauthorized' });
+      if (brand === 'Deloitte' && CFG.REQUIRE_LOGIN) {
+        if (!session) return jsonOut_({ ok: false, error: 'unauthorized' });
+        if (session.mustChange) return jsonOut_({ ok: false, error: 'must_change_password' });
+      }
       return handleKitRequest_(body, session);
     case 'agent_log':
       var agentSession = requireAgentSession_(body.session);
       if (!agentSession) return jsonOut_({ ok: false, error: 'unauthorized' });
       return handleAgentLog_(body, agentSession);
+    case 'change_password':
+      return handleChangePassword_(body);
+    case 'admin_users':
+      return withAdminSession_(body, 'admin', handleAdminUsers_);
+    case 'admin_add_user':
+      return withAdminSession_(body, 'admin', handleAdminAddUser_);
+    case 'admin_bulk_users':
+      return withAdminSession_(body, 'admin', handleAdminBulkUsers_);
+    case 'admin_update_user':
+      return withAdminSession_(body, 'admin', handleAdminUpdateUser_);
+    case 'admin_set_active':
+      return withAdminSession_(body, 'admin', handleAdminSetActive_);
+    case 'admin_reset_password':
+      return withAdminSession_(body, 'admin', handleAdminResetPassword_);
+    case 'admin_unlock_user':
+      return withAdminSession_(body, 'admin', handleAdminUnlockUser_);
+    case 'admin_revoke_sessions':
+      return withAdminSession_(body, 'super_admin', handleAdminRevokeSessions_);
+    case 'admin_audit':
+      return withAdminSession_(body, 'super_admin', handleAdminAudit_);
     default:
       return jsonOut_({ ok: false, error: 'unknown fn' });
   }
+}
+
+/* ------------------------------------------------------------------
+   Admin portal endpoint plumbing.
+
+   Every admin_* endpoint is Deloitte-only (this script's brand check, same
+   generic 'unauthorized' shape as every other gate here) and role-checked
+   via requireRoleSession_, which re-reads the caller's own Login row on
+   every call. A handler throwing is caught here, audited as a denial with
+   the thrown message as the detail (never a password/hash/salt — no
+   handler ever throws one of those), and reported as the same generic
+   'unauthorized' the client already treats every other failure as.
+   ------------------------------------------------------------------ */
+function withAdminSession_(body, minRole, handler) {
+  var brand = normalizeBrand_(body.brand);
+  if (brand !== 'Deloitte') return jsonOut_({ ok: false, error: 'unauthorized' });
+  var auth = requireRoleSession_(body.session, minRole);
+  if (!auth) return jsonOut_({ ok: false, error: 'unauthorized' });
+  try {
+    return handler(body, auth);
+  } catch (err) {
+    auditLog_(auth.session.username, auth.role, 'denied_' + String(body.fn || ''), String((body.user && body.user.username) || body.username || ''),
+      { reason: err && err.message });
+    return jsonOut_({ ok: false, error: 'unauthorized' });
+  }
+}
+
+/* Self-service password change. Any signed-in, active user may call this —
+   there is no role floor — but it still goes through the Deloitte brand
+   check for consistency with every other endpoint. Mints a fresh session
+   token so the caller's own tab keeps working after their other sessions
+   are revoked (see the iat/rev_ comment on requireSession_). */
+function handleChangePassword_(body) {
+  var brand = normalizeBrand_(body.brand);
+  if (brand !== 'Deloitte') return jsonOut_({ ok: false, error: 'unauthorized' });
+  var session = requireSession_(body.session);
+  if (!session) return jsonOut_({ ok: false, error: 'unauthorized' });
+
+  var current = String(body.current_password || '');
+  var next = String(body.new_password || '');
+  if (next.length < 10) return jsonOut_({ ok: false, error: 'Choose a password of at least 10 characters.' });
+
+  var rec;
+  try { rec = findLoginRow_(session.username); } catch (err) { return jsonOut_({ ok: false, error: 'unauthorized' }); }
+  if (!rec || !isActiveCell_(rec.row[rec.ci.active])) return jsonOut_({ ok: false, error: 'unauthorized' });
+
+  var storedHash = String(rec.row[rec.ci.hash] || '').trim();
+  var salt = String(rec.row[rec.ci.salt] || '').trim();
+  // A forced (must_change) reset may not know the temp password, but this
+  // is still "prove you are this user" — skip the current-password check
+  // only when the row is flagged must_change_password, since that flag
+  // itself only gets set by an admin action or a fresh account.
+  var forced = rec.ci.mustChange >= 0 && boolCell_(rec.row[rec.ci.mustChange]);
+  if (!forced && !constantTimeEq_(sha256Hex_(salt + current), storedHash)) {
+    return jsonOut_({ ok: false, error: 'Current password is incorrect.' });
+  }
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var newSalt = Utilities.getUuid();
+    rec.sheet.getRange(rec.rowIndex, rec.ci.hash + 1).setValue(sha256Hex_(newSalt + next));
+    rec.sheet.getRange(rec.rowIndex, rec.ci.salt + 1).setValue(newSalt);
+    if (rec.ci.mustChange >= 0) rec.sheet.getRange(rec.rowIndex, rec.ci.mustChange + 1).setValue(false);
+    if (rec.ci.pwChangedAt >= 0) rec.sheet.getRange(rec.rowIndex, rec.ci.pwChangedAt + 1).setValue(new Date());
+  } finally {
+    lock.releaseLock();
+  }
+
+  revokeSessions_(session.username);
+  var token = Utilities.getUuid();
+  var iat = Date.now() + 1; // strictly after the revocation timestamp above
+  var expires = iat + CFG.SESSION_TTL_SECS * 1000;
+  CacheService.getScriptCache().put('sess_' + token,
+    JSON.stringify({
+      username: session.username, name: session.name, email: session.email, company: session.company,
+      agentAccess: session.agentAccess, role: session.role, mustChange: false, iat: iat,
+    }),
+    CFG.SESSION_TTL_SECS);
+
+  auditLog_(session.username, session.role, 'password_changed', session.username, null);
+  return jsonOut_({ ok: true, token: token, expires: expires });
+}
+
+/* ---- list ---- */
+function handleAdminUsers_(body, auth) {
+  var sh = getLoginSheet_();
+  var vals = sh.getDataRange().getValues();
+  if (vals.length < 1) return jsonOut_({ ok: true, users: [] });
+  var ci = loginCols_(vals[0]);
+  var cache = CacheService.getScriptCache();
+  var users = [];
+  for (var r = 1; r < vals.length; r++) {
+    var row = vals[r];
+    var username = String(row[ci.username] || '').trim();
+    if (!username) continue;
+    users.push({
+      username: username,
+      name: String(row[ci.name] || '').trim(),
+      email: String(row[ci.email] || '').trim(),
+      company: String(row[ci.company] || '').trim(),
+      notes: String(row[ci.notes] || '').trim(),
+      role: ci.role >= 0 ? normalizeRole_(row[ci.role]) : 'user',
+      active: isActiveCell_(row[ci.active]),
+      agent_access: ci.agentAccess >= 0 && boolCell_(row[ci.agentAccess]),
+      locked: !!cache.get('lock_' + username.toLowerCase()),
+      last_login: row[ci.lastLogin] ? String(row[ci.lastLogin]) : '',
+      created_at: ci.createdAt >= 0 ? String(row[ci.createdAt] || '') : '',
+      created_by: ci.createdBy >= 0 ? String(row[ci.createdBy] || '') : '',
+    });
+  }
+  return jsonOut_({ ok: true, users: users });
+}
+
+/* ---- add one ---- */
+function handleAdminAddUser_(body, auth) {
+  var u = body.user || {};
+  var username = String(u.username || '').trim().toLowerCase();
+  var name = sanitizeCell_(String(u.name || '').trim());
+  var email = String(u.email || '').trim();
+  var company = sanitizeCell_(String(u.company || '').trim());
+  var notes = sanitizeCell_(String(u.notes || '').trim());
+  var agentAccess = !!u.agent_access;
+  var wantRole = normalizeRole_(u.role);
+  if (wantRole !== 'user' && auth.role !== 'super_admin') wantRole = 'user'; // only a super admin may grant admin
+
+  if (!usernameValid_(username)) throw new Error('Username must be 3-40 lowercase letters, digits, . _ or -.');
+  if (!name) throw new Error('Name is required.');
+  if (email && !emailValid_(email)) throw new Error('Enter a valid email address.');
+
+  var typed = String(u.password || '');
+  var generated = '';
+  if (typed) {
+    if (typed.length < 10) throw new Error('Choose a password of at least 10 characters.');
+  } else {
+    generated = randomPassword_();
+  }
+  var plain = typed || generated;
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  var rowIndex;
+  try {
+    var sh = getLoginSheet_();
+    var header = sh.getDataRange().getValues()[0];
+    var ci = loginCols_(header);
+    if (findLoginRow_(username)) throw new Error(username + ' already has an account.');
+
+    var salt = Utilities.getUuid();
+    var values = {
+      username: username, name: name, email: sanitizeCell_(email), company: company, notes: notes,
+      active: true, hash: sha256Hex_(salt + plain), salt: salt,
+      mustChange: true, createdAt: new Date(), createdBy: auth.session.username,
+    };
+    if (ci.agentAccess >= 0) values.agentAccess = agentAccess;
+    if (ci.role >= 0) values.role = wantRole;
+    rowIndex = appendLoginRow_(sh, ci, values);
+  } finally {
+    lock.releaseLock();
+  }
+
+  auditLog_(auth.session.username, auth.role, 'user_added', username, { role: wantRole, agent_access: agentAccess });
+  var out = { ok: true, username: username };
+  if (generated) out.generated_password = generated;
+  return jsonOut_(out);
+}
+
+/* ---- bulk import ---- */
+function handleAdminBulkUsers_(body, auth) {
+  var rows = body.users || [];
+  if (!rows.length) throw new Error('No users supplied.');
+  if (rows.length > 200) throw new Error('Import is capped at 200 rows per call.');
+  var sharedPw = String(body.password || '');
+  if (sharedPw && sharedPw.length < 10) throw new Error('Shared password must be at least 10 characters.');
+
+  var added = [], skipped = [], failed = [], passwords = {};
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = getLoginSheet_();
+    rows.forEach(function (u) {
+      var username = String(u.username || '').trim().toLowerCase();
+      var name = sanitizeCell_(String(u.name || '').trim());
+      var email = String(u.email || '').trim();
+      var company = sanitizeCell_(String(u.company || '').trim());
+      try {
+        if (!usernameValid_(username)) throw new Error('invalid username');
+        if (!name) throw new Error('name is required');
+        if (email && !emailValid_(email)) throw new Error('invalid email');
+        var header = sh.getDataRange().getValues()[0];
+        var ci = loginCols_(header);
+        if (findLoginRow_(username)) { skipped.push(username); return; }
+
+        var plain = sharedPw || randomPassword_();
+        var salt = Utilities.getUuid();
+        var values = {
+          username: username, name: name, email: sanitizeCell_(email), company: company,
+          active: true, hash: sha256Hex_(salt + plain), salt: salt,
+          mustChange: true, createdAt: new Date(), createdBy: auth.session.username,
+        };
+        appendLoginRow_(sh, ci, values);
+        added.push(username);
+        if (!sharedPw) passwords[username] = plain;
+      } catch (err) {
+        failed.push({ username: username, error: err.message });
+      }
+    });
+  } finally {
+    lock.releaseLock();
+  }
+
+  auditLog_(auth.session.username, auth.role, 'users_imported', '',
+    { added: added.length, skipped: skipped.length, failed: failed.length });
+  notifyWebhook_('👥 *' + auth.session.username + '* bulk-imported ' + added.length +
+    ' user(s) into the Deloitte store (' + skipped.length + ' skipped, ' + failed.length + ' failed).');
+
+  return jsonOut_({ ok: true, added: added, skipped: skipped, failed: failed, passwords: passwords });
+}
+
+/* ---- update fields (+ role, super admin only) ---- */
+function handleAdminUpdateUser_(body, auth) {
+  var username = String(body.username || '').trim().toLowerCase();
+  var u = body.user || {};
+  var rec = findLoginRow_(username);
+  if (!rec) throw new Error('no such user');
+  var targetRole = rec.ci.role >= 0 ? normalizeRole_(rec.row[rec.ci.role]) : 'user';
+  assertCanManageTarget_(auth.role, auth.session.username, username, targetRole);
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  var changedFields = [];
+  var roleChanged = false;
+  try {
+    if ('name' in u) { rec.sheet.getRange(rec.rowIndex, rec.ci.name + 1).setValue(sanitizeCell_(String(u.name || '').trim())); changedFields.push('name'); }
+    if ('email' in u) {
+      var email = String(u.email || '').trim();
+      if (email && !emailValid_(email)) throw new Error('invalid email');
+      rec.sheet.getRange(rec.rowIndex, rec.ci.email + 1).setValue(sanitizeCell_(email));
+      changedFields.push('email');
+    }
+    if ('company' in u) { rec.sheet.getRange(rec.rowIndex, rec.ci.company + 1).setValue(sanitizeCell_(String(u.company || '').trim())); changedFields.push('company'); }
+    if ('notes' in u) { rec.sheet.getRange(rec.rowIndex, rec.ci.notes + 1).setValue(sanitizeCell_(String(u.notes || '').trim())); changedFields.push('notes'); }
+    if ('agent_access' in u && rec.ci.agentAccess >= 0) {
+      rec.sheet.getRange(rec.rowIndex, rec.ci.agentAccess + 1).setValue(!!u.agent_access);
+      changedFields.push('agent_access');
+    }
+    if ('role' in u && rec.ci.role >= 0) {
+      if (auth.role !== 'super_admin') throw new Error('only a super admin may change roles');
+      var newRole = normalizeRole_(u.role);
+      if (newRole === 'super_admin') throw new Error('the portal cannot grant super_admin');
+      if (newRole !== targetRole) {
+        rec.sheet.getRange(rec.rowIndex, rec.ci.role + 1).setValue(newRole);
+        changedFields.push('role');
+        roleChanged = true;
+      }
+    }
+  } finally {
+    lock.releaseLock();
+  }
+
+  if (roleChanged) revokeSessions_(username);
+  auditLog_(auth.session.username, auth.role, 'user_updated', username, { fields: changedFields });
+  if (roleChanged) {
+    auditLog_(auth.session.username, auth.role, 'role_changed', username, { to: normalizeRole_(u.role) });
+    notifyWebhook_('🔑 *' + auth.session.username + '* changed *' + username + '*’s role to ' + normalizeRole_(u.role) + '.');
+  }
+  return jsonOut_({ ok: true });
+}
+
+/* ---- activate / deactivate ---- */
+function handleAdminSetActive_(body, auth) {
+  var username = String(body.username || '').trim().toLowerCase();
+  var active = !!body.active;
+  var rec = findLoginRow_(username);
+  if (!rec) throw new Error('no such user');
+  var targetRole = rec.ci.role >= 0 ? normalizeRole_(rec.row[rec.ci.role]) : 'user';
+  assertCanManageTarget_(auth.role, auth.session.username, username, targetRole);
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    rec.sheet.getRange(rec.rowIndex, rec.ci.active + 1).setValue(active);
+  } finally {
+    lock.releaseLock();
+  }
+
+  if (!active) {
+    revokeSessions_(username);
+    notifyWebhook_('🚫 *' + auth.session.username + '* deactivated *' + username + '*.');
+  }
+  auditLog_(auth.session.username, auth.role, active ? 'user_activated' : 'user_deactivated', username, null);
+  return jsonOut_({ ok: true });
+}
+
+/* ---- reset password ---- */
+function handleAdminResetPassword_(body, auth) {
+  var username = String(body.username || '').trim().toLowerCase();
+  var rec = findLoginRow_(username);
+  if (!rec) throw new Error('no such user');
+  var targetRole = rec.ci.role >= 0 ? normalizeRole_(rec.row[rec.ci.role]) : 'user';
+  assertCanManageTarget_(auth.role, auth.session.username, username, targetRole);
+
+  var typed = String(body.password || '');
+  var generated = '';
+  if (typed) {
+    if (typed.length < 10) throw new Error('Choose a password of at least 10 characters.');
+  } else {
+    generated = randomPassword_();
+  }
+  var plain = typed || generated;
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var salt = Utilities.getUuid();
+    rec.sheet.getRange(rec.rowIndex, rec.ci.hash + 1).setValue(sha256Hex_(salt + plain));
+    rec.sheet.getRange(rec.rowIndex, rec.ci.salt + 1).setValue(salt);
+    if (rec.ci.mustChange >= 0) rec.sheet.getRange(rec.rowIndex, rec.ci.mustChange + 1).setValue(true);
+    if (rec.ci.pwChangedAt >= 0) rec.sheet.getRange(rec.rowIndex, rec.ci.pwChangedAt + 1).setValue(new Date());
+  } finally {
+    lock.releaseLock();
+  }
+  clearLoginFailures_(username);
+  CacheService.getScriptCache().remove('lock_' + username);
+  revokeSessions_(username);
+
+  auditLog_(auth.session.username, auth.role, 'password_reset', username, null);
+  var out = { ok: true };
+  if (generated) out.generated_password = generated;
+  return jsonOut_(out);
+}
+
+/* ---- unlock (clear failed-attempt lockout) ---- */
+function handleAdminUnlockUser_(body, auth) {
+  var username = String(body.username || '').trim().toLowerCase();
+  var rec = findLoginRow_(username);
+  if (!rec) throw new Error('no such user');
+  var targetRole = rec.ci.role >= 0 ? normalizeRole_(rec.row[rec.ci.role]) : 'user';
+  assertCanManageTarget_(auth.role, auth.session.username, username, targetRole);
+
+  clearLoginFailures_(username);
+  CacheService.getScriptCache().remove('lock_' + username);
+  auditLog_(auth.session.username, auth.role, 'unlocked', username, null);
+  return jsonOut_({ ok: true });
+}
+
+/* ---- sign out everywhere (super admin) ---- */
+function handleAdminRevokeSessions_(body, auth) {
+  var username = String(body.username || '').trim().toLowerCase();
+  var rec = findLoginRow_(username);
+  if (!rec) throw new Error('no such user');
+  var targetRole = rec.ci.role >= 0 ? normalizeRole_(rec.row[rec.ci.role]) : 'user';
+  if (targetRole === 'super_admin' && username !== auth.session.username) throw new Error('unauthorized');
+
+  revokeSessions_(username);
+  auditLog_(auth.session.username, auth.role, 'sessions_revoked', username, null);
+  return jsonOut_({ ok: true });
+}
+
+/* ---- audit log, paginated ---- */
+function handleAdminAudit_(body, auth) {
+  var ss = SpreadsheetApp.getActive();
+  var sh = ss.getSheetByName(ADMIN_AUDIT_SHEET);
+  if (!sh) return jsonOut_({ ok: true, rows: [], total: 0 });
+  var vals = sh.getDataRange().getValues();
+  var rows = [];
+  for (var r = vals.length - 1; r >= 1; r--) { // newest first
+    var row = vals[r];
+    var entry = { timestamp: String(row[0]), actor: String(row[1]), actor_role: String(row[2]),
+      action: String(row[3]), target: String(row[4]), detail: String(row[5]) };
+    if (body.actor && entry.actor.toLowerCase().indexOf(String(body.actor).toLowerCase()) < 0) continue;
+    if (body.action && entry.action !== body.action) continue;
+    rows.push(entry);
+  }
+  var offset = Math.max(0, Number(body.offset) || 0);
+  var limit = Math.min(200, Math.max(1, Number(body.limit) || 50));
+  return jsonOut_({ ok: true, total: rows.length, rows: rows.slice(offset, offset + limit) });
 }
 
 /* ------------------------------------------------------------------
