@@ -32,14 +32,17 @@ event-kits.html   one occasion (Sustainability, Festive Gift Kits)
 preset-kits.html  the ready-made Gift Box products
 kit.html          build-a-kit: headcount and budget in, a kit out
 cart.html         cart, MOQ enforcement, submits the request
+agent.html        Agent Merch: internal kit-builder + PDF quotation tool,
+                  gated to CompanyStore sales agents only — see below
 
 assets/taxonomy.json    per-SKU category override (hand-maintained)
 assets/colorways.json   curated colour groups (hand-maintained)
-assets/site.json        banner, logo and site copy — no prices, safe to publish
+assets/site.json        banner, logo, site copy and the PDF footer lines — no prices, safe to publish
 assets/offices.json     Deloitte India delivery centres, for the request form
 assets/kits/kits.json   occasion photography, keyed by slug
 assets/css/app.css      Deloitte palette, all tokens in :root
 assets/js/app.js        catalogue, pricing engine, filters, page chrome, auth
+assets/js/agent.js      Agent Merch's kit generation, PDF export and quote history — not loaded outside agent.html
 
 apps-script-feed/Code.gs   the backend: login gate, catalogue feed, request intake
 scripts/                   image tooling (not deployed)
@@ -74,7 +77,7 @@ Credentials live in the **`Login`** tab of the same spreadsheet the catalogue
 feed reads, next to `Cart Enquiries` (where submitted requests land). There
 is no signup and no self-service reset: an ASM manages rows directly.
 
-**Login tab columns:** `username | password | password_hash | salt | active | name | email | company | last_login | notes`
+**Login tab columns:** `username | password | password_hash | salt | active | name | email | company | last_login | notes | agent_access`
 
 **Adding a user (ASM workflow):** add a row, type a plain-text password into
 `password`, set `active` to `TRUE`, then from the spreadsheet's
@@ -89,6 +92,59 @@ as a wrong password, so a disabled account can't be enumerated).
 (same generic error either way), plus a small delay on every failed attempt.
 A Google Chat webhook (`CFG.WEBHOOK_URL` in `Code.gs`) posts on lockouts,
 successful sign-ins, and every cart/kit submission.
+
+## Agent Merch (internal, gated)
+
+`agent.html` is a kit-builder + PDF-quotation tool for CompanyStore ASMs and
+sales agents — not a customer-facing page. It builds kits/collections from
+the same live Deloitte catalogue everyone else sees (no second data source),
+at the agent's chosen quantity-per-kit tier price plus a markup they set, and
+exports a branded PDF for a client. Every other Deloitte user must see **no
+trace of it**: no nav link, no page, no data.
+
+**Access control, three layers deep (a hidden nav link alone is not access
+control):**
+
+1. **Login tab flag.** A Login row needs `agent_access` set to `TRUE`. Blank,
+   `FALSE`, or the column missing entirely all resolve to "no access" — adding
+   the column is safe to do at any time, it never breaks a login.
+2. **Nav.** `header()`/`openMenu()` in `app.js` only render the "Agent Merch"
+   link when the signed-in user's `features.agentMerch` (set at login from the
+   Login row) is true.
+3. **Page + backend.** `agent.html` carries the usual session head-guard plus
+   a second check: a session without `features.agentMerch` is redirected to
+   `index.html` silently, no error shown. Separately, and this is the part
+   that actually matters if someone bypasses the UI, `Code.gs`'s
+   `fn=agent_log` endpoint calls `requireAgentSession_`, which checks the
+   *session's* `agentAccess` flag (minted server-side at login, not anything
+   the client can assert) and returns the same generic `{error:'unauthorized'}`
+   used everywhere else — a non-agent's token gets rejected even if they call
+   the endpoint directly from devtools.
+
+**Where things live:**
+
+- `agent_access` (and no other new column) on the `Login` tab, resolved by
+  `colOfOptional_` in `Code.gs` — unlike `colOf_`, it returns `-1` instead of
+  throwing when the column is absent, so this stays backward-compatible.
+- `fn=agent_log` (`Code.gs`) — the only new endpoint. Writes one row per
+  generate/manual-add/status/PDF-export event to an auto-created **`Agent
+  Capture`** sheet tab (`Timestamp, Username, Name, Company, Event, QuoteId,
+  ClientName, Payload`), with identity columns taken from the session, never
+  from the request body. Only a `pdf_export` event also pings the Google Chat
+  webhook — every other event is capture-only.
+- `assets/site.json`'s `settings.pdfFooter` — the six disclaimer lines printed
+  on every exported PDF (GST, branding/logo setup charges, freight, custom
+  design MOQ, lead time). Edit this file to change the wording; no code
+  change needed.
+- Product images in the PDF are converted to base64 before jsPDF touches them
+  (a cross-origin image drawn straight into a canvas would taint it): the
+  logo and other same-origin assets are fetched directly, Drive-hosted
+  product photos go through the public `images.weserv.nl` proxy. That proxy
+  only ever sees a product photo URL, never a price or a client name.
+
+**Redeploy note:** the `agent_access` column and `fn=agent_log` endpoint only
+take effect after `Code.gs` is redeployed — see "Backend" under Deploy below;
+editing the Apps Script source alone does not update the live `/exec` URL.
 
 ## The catalogue feed
 
@@ -226,20 +282,19 @@ Push to `main`. Pages serves the repo root; a deploy lands in about a minute.
 
 ### Backend
 
-`apps-script-feed/Code.gs` is bound to the master pricing spreadsheet and is
-**shared with the Optum storefront** — one sheet, one script, one `/exec` URL.
-The caller says which brand it is on every request (`?brand=Deloitte` on GET,
-`{brand:'Deloitte'}` on POST); only the response tag and the destination tab
-differ. Two sheets would mean maintaining the same catalogue twice.
+`apps-script-feed/Code.gs` is bound to this brand's own pricing spreadsheet.
+Optum runs a separate deployment and sheet (`optum-B2B/apps-script-feed/Code.gs`)
+— the two are independent scripts and no longer share a backend, a catalogue
+tab, or a `/exec` URL, so a change here needs no Optum compatibility check.
 
-To change it: Extensions → Apps Script from the master sheet → paste in the
+To change it: Extensions → Apps Script from this spreadsheet → paste in the
 new `Code.gs` → if the `Login` tab is new, run `hashPendingPasswords` once
 from the Run dropdown (authorises the script and hashes any seed rows) →
 Deploy → Manage deployments → pencil → Version: New version → Deploy. Editing
-the existing deployment keeps the same `/exec` URL, so neither site needs a
+the existing deployment keeps the same `/exec` URL, so the site needs no
 config change — but the web app **must** be redeployed with a new version for
-`fn=login` (or any other new endpoint) to actually exist; saving alone is not
-enough.
+`fn=login` (or any other new/changed endpoint, including `fn=agent_log`) to
+actually take effect; saving alone is not enough.
 
 `CONFIG.FEED_URL` / `CONFIG.API_URL` / `CONFIG.BRAND` sit at the top of
 `assets/js/app.js`.
