@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>
+(function () {
+  if (!sessionStorage.getItem('cs_session')) { location.replace('login.html?next=admin.html'); return; }
+  try {
+    var u = JSON.parse(sessionStorage.getItem('cs_user') || 'null');
+    var role = u && u.role;
+    if (!u || (role !== 'admin' && role !== 'super_admin')) location.replace('index.html');
+  } catch (e) { location.replace('index.html'); }
+})();
+</script>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Admin | Deloitte Merchandise Store</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<main class="wrap">
+  <div class="page-head">
+    <span class="am-internal-tag">Internal — CompanyStore account managers</span>
+    <h1>Admin</h1>
+    <p class="muted">Manage who can sign in to the Deloitte store, their access, and their roles.</p>
+  </div>
+
+  <nav class="adm-tabs" id="adminTabs"></nav>
+  <section id="adminBody"></section>
+</main>
+
+<script src="assets/js/app.js"></script>
+<script src="assets/js/admin.js"></script>
+<script>
+(async function () {
+  await mountAdmin();
+})();
+</script>
+</body>
+</html>
