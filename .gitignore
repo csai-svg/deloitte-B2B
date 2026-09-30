@@ -1,2 +1,6 @@
 node_modules/
 .DS_Store
+
+# Closed catalogue: product/price data must only ever come from an
+# authenticated call to Code.gs, never be bundled into the public repo.
+assets/products.json

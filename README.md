@@ -1,22 +1,29 @@
 # Deloitte B2B Store
 
-View-only merchandise catalogue for Deloitte, published at
+Closed, view-only merchandise catalogue for Deloitte, published at
 <https://csai-svg.github.io/deloitte-B2B/>.
 
-Static frontend on GitHub Pages, one Google Sheet as the catalogue, one Apps
-Script web app as the feed and the submission endpoint. No server, no
-framework, no build step — the only tooling is a Python script that refreshes
-the bundled catalogue snapshot.
+Static frontend on GitHub Pages, one Google Sheet as the catalogue (and the
+credential store), one Apps Script web app as the feed, login gate and
+submission endpoint. No server, no framework, no build step.
 
-There is **no login, no approval, no payment**. A visitor browses, builds a cart
-or a kit, and submits a request; that request lands as one row on a
-`Deloitte Kit Requests` tab for an ASM to pick up.
+There is **no signup, no self-service password reset, and no order
+tracking**. A visitor signs in with a username/password an ASM issued them,
+browses, builds a cart or a kit, and submits a request; that request lands as
+one row on the `Cart Enquiries` tab for an ASM to pick up. There is no
+approval workflow and no payment.
+
+**The catalogue is genuinely gated, not client-side theatre.** No product or
+price data is ever bundled into this repo (see `.gitignore`) — every page
+loads the catalogue live from Code.gs, which itself refuses to return
+anything without a valid session token. See "Login gate" below.
 
 ---
 
 ## What is here
 
 ```
+login.html        username + password sign-in, the only unauthenticated page
 index.html        landing: banner, categories, a featured strip
 all.html          whole catalogue, search + filter rail
 category.html     one category, subcategory filters
@@ -26,52 +33,83 @@ preset-kits.html  the ready-made Gift Box products
 kit.html          build-a-kit: headcount and budget in, a kit out
 cart.html         cart, MOQ enforcement, submits the request
 
-assets/products.json    catalogue snapshot, 304 products (build artifact)
-assets/taxonomy.json    per-SKU category override, 304 entries (hand-maintained)
+assets/taxonomy.json    per-SKU category override (hand-maintained)
 assets/colorways.json   curated colour groups (hand-maintained)
-assets/site.json        banner, logo and site copy
+assets/site.json        banner, logo and site copy — no prices, safe to publish
 assets/offices.json     Deloitte India delivery centres, for the request form
 assets/kits/kits.json   occasion photography, keyed by slug
 assets/css/app.css      Deloitte palette, all tokens in :root
-assets/js/app.js        catalogue, pricing engine, filters, page chrome
+assets/js/app.js        catalogue, pricing engine, filters, page chrome, auth
 
-apps-script-feed/Code.gs   the backend: catalogue feed + request intake
-scripts/                   build and image tooling (not deployed)
+apps-script-feed/Code.gs   the backend: login gate, catalogue feed, request intake
+scripts/                   image tooling (not deployed)
 ```
 
-`robots.txt` disallows everything and every page carries `noindex,nofollow`:
-the prices are public to anyone with the link but must not be indexed.
+`robots.txt` disallows everything and every page carries `noindex,nofollow`.
+There is no bundled catalogue snapshot — `assets/products.json` is gitignored
+and must never be committed — so nothing about the products or prices is
+reachable without signing in first.
 
 ---
 
-## The catalogue pipeline
+## Login gate
 
-One Google Sheet is the source of truth. It is read two ways:
-
-```
-                    ┌─ JSONP, live, cached 60s ──────────────┐
-Google Sheet ──► Code.gs doGet(?fn=catalog&brand=Deloitte) ───┤
-                    └─ scripts/build_catalog.py ──► assets/products.json
-```
-
-The storefront paints from `assets/products.json` on first load and swaps in
-the live feed only on the **next** navigation (`loadCatalogueJSON` in
-`app.js`). That keeps first paint instant, but it means a stale snapshot is a
-stale storefront for every first-time visitor. **Re-run the build after any
-change to the sheet:**
+The catalogue is closed. Every page except `login.html` carries a synchronous
+head-guard that redirects to it the instant there is no `cs_session` token in
+`sessionStorage` — nothing paints before that check runs.
 
 ```
-python3 scripts/build_catalog.py     # rewrites assets/products.json from the feed
-git commit -am "catalogue refresh" && git push
+username/password ──► Code.gs doPost({fn:'login'}) ──► Login sheet tab
+                       (SHA-256(salt+password), constant-time compare)
+                            │ ok
+                            ▼
+                    opaque session token, 6h TTL, in CacheService
+                            │
+              stored client-side in sessionStorage (cleared when the tab closes)
+                            │
+        every fn=catalog / fn=kit_request call carries it and is rejected without it
 ```
 
-The script refuses to write a snapshot under 100 products or one missing any
-field the storefront reads, so a broken feed cannot quietly empty the store.
+Credentials live in the **`Login`** tab of the same spreadsheet the catalogue
+feed reads, next to `Cart Enquiries` (where submitted requests land). There
+is no signup and no self-service reset: an ASM manages rows directly.
+
+**Login tab columns:** `username | password | password_hash | salt | active | name | email | company | last_login | notes`
+
+**Adding a user (ASM workflow):** add a row, type a plain-text password into
+`password`, set `active` to `TRUE`, then from the spreadsheet's
+**Client Access > Hash new passwords** menu run the hash. That reads any row
+with a plain password and no hash yet, generates a random salt, stores
+`SHA-256(salt + password)` in `password_hash`, writes the salt, and clears the
+plain `password` cell — nothing plain-text is left sitting in the sheet.
+Setting `active` to `FALSE` disables a user immediately (same generic error
+as a wrong password, so a disabled account can't be enumerated).
+
+**Brute force:** 5 wrong passwords locks that username out for 15 minutes
+(same generic error either way), plus a small delay on every failed attempt.
+A Google Chat webhook (`CFG.WEBHOOK_URL` in `Code.gs`) posts on lockouts,
+successful sign-ins, and every cart/kit submission.
+
+## The catalogue feed
+
+One Google Sheet is the source of truth, read live on every page load —
+there is no bundled snapshot:
+
+```
+Google Sheet ──► Code.gs doGet(?fn=catalog&brand=Deloitte&session=…) ──► JSONP, cached 60s server-side
+```
+
+`loadCatalogueJSON()` in `app.js` calls this once per browser session (cached
+in `sessionStorage` for the rest of the tab) and refreshes it in the
+background on every navigation after that. A feed that is unreachable or
+answers `unauthorized` never falls back to stale or local data — it shows
+"Unable to load catalogue, please retry" (or, for an expired session,
+redirects to `login.html`).
 
 ### Two overrides layered on top
 
-Both are applied client-side after the catalogue loads and are **not**
-overwritten by `build_catalog.py`:
+Both are hand-maintained static files, applied client-side after the live
+catalogue loads:
 
 | file | what it does |
 |---|---|
@@ -194,10 +232,14 @@ The caller says which brand it is on every request (`?brand=Deloitte` on GET,
 `{brand:'Deloitte'}` on POST); only the response tag and the destination tab
 differ. Two sheets would mean maintaining the same catalogue twice.
 
-To change it: Extensions → Apps Script from the master sheet → edit → Deploy →
-Manage deployments → pencil → Version: New version → Deploy. Editing the
-existing deployment keeps the same `/exec` URL, so neither site needs a config
-change.
+To change it: Extensions → Apps Script from the master sheet → paste in the
+new `Code.gs` → if the `Login` tab is new, run `hashPendingPasswords` once
+from the Run dropdown (authorises the script and hashes any seed rows) →
+Deploy → Manage deployments → pencil → Version: New version → Deploy. Editing
+the existing deployment keeps the same `/exec` URL, so neither site needs a
+config change — but the web app **must** be redeployed with a new version for
+`fn=login` (or any other new endpoint) to actually exist; saving alone is not
+enough.
 
 `CONFIG.FEED_URL` / `CONFIG.API_URL` / `CONFIG.BRAND` sit at the top of
 `assets/js/app.js`.
@@ -213,9 +255,12 @@ string body. Do not "fix" either to `application/json`; every read and write
 will start failing.
 
 **Cold starts.** A cold Apps Script call has been seen to take over 12 seconds,
-which is the JSONP timeout in `refreshFeedCache`. A timed-out refresh is
-silent and harmless — the next navigation retries — but it is another reason
-the committed snapshot has to be current.
+which is the JSONP timeout in `refreshFeedCache`. On the *first* page of a
+session, `loadCatalogueJSON` blocks on the feed (12s timeout) since there is
+no snapshot to fall back to; a slow/failed feed shows "Unable to load
+catalogue, please retry" rather than a blank or stale page. A timed-out
+*background* refresh on a later navigation is silent and harmless — the next
+navigation retries.
 
 **Image hosting.** Product photos come from two places: `csai-svg.github.io`
 (migrated copies) and `drive.google.com/thumbnail?id=…` straight off Drive.

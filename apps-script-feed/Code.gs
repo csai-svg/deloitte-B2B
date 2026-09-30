@@ -17,15 +17,19 @@
     doPost {fn:'kit_request', brand:'Optum', ...} -> appends one row to that
                            brand's own "<Brand> Kit Requests" tab (created if
                            missing) so ASMs see cart/kit submissions per site,
-                           without splitting the catalogue itself.
-    doPost {fn:'auth_google'|'auth_resend_otp'|'auth_verify_otp', ...} ->
-                           the Deloitte site's login gate: verifies a Google
-                           ID token is a CFG.ALLOWED_DOMAIN address, emails a
-                           one-time code, and verifies it into a session
-                           token. When CFG.REQUIRE_LOGIN is true, fn=catalog
-                           and fn=kit_request both require that session
-                           token (?session=/body.session) — see the "Deloitte
-                           -only login gate" block below for details.
+                           without splitting the catalogue itself. Requester
+                           name/username come from the session, never the
+                           posted body.
+    doPost {fn:'login'|'logout', ...} -> the Deloitte site's login gate:
+                           username + password checked against the "Login"
+                           tab in this same spreadsheet (hashed, salted,
+                           constant-time compare), with per-username lockout
+                           after repeated failures. On success mints an
+                           opaque session token. When CFG.REQUIRE_LOGIN is
+                           true and brand is Deloitte, fn=catalog and
+                           fn=kit_request both require that session token
+                           (?session=/body.session) — see the "Deloitte-only
+                           login gate" block below for details.
 
   Deploy (once): Extensions > Apps Script (from the master sheet) > paste
   this > Deploy > New deployment > Web app > Execute as: Me > Who has
@@ -44,16 +48,42 @@ var CFG = {
   TOKEN: '',                           // optional shared secret; '' = open
   CACHE_SECS: 60,
 
-  // Deloitte-only login gate (Google OAuth domain check + email OTP).
-  GOOGLE_CLIENT_ID: '',                 // fill in after creating the OAuth client in Google Cloud Console
-  ALLOWED_DOMAIN: 'deloitte.com',
-  REQUIRE_LOGIN: true,                  // flip to false to debug the feed/kit_request without auth
-  OTP_TTL_SECS: 300,                    // how long an emailed code stays valid
-  OTP_RESEND_COOLDOWN_SECS: 60,         // minimum gap between two codes to the same email
-  OTP_MAX_SENDS_PER_HOUR: 5,            // per email, across resends
-  OTP_MAX_ATTEMPTS: 5,                  // wrong-code guesses allowed before a code is dead
+  // Deloitte-only login gate: username + password checked against the
+  // "Login" tab of this same spreadsheet. REQUIRE_LOGIN only ever applies
+  // to brand === 'Deloitte' (see doGet/doPost) — Optum stays open.
+  LOGIN_SHEET: 'Login',
+  CART_SHEET: 'Cart Enquiries',       // Deloitte kit/cart submissions land here (Optum keeps its own per-brand tab)
+  REQUIRE_LOGIN: true,                  // flip to false to debug the Deloitte feed/kit_request without auth
   SESSION_TTL_SECS: 6 * 60 * 60,        // server-side ceiling on a signed-in session
+  LOGIN_MAX_ATTEMPTS: 5,                // failed attempts before a username is locked out
+  LOGIN_LOCKOUT_SECS: 15 * 60,          // how long a lockout lasts
+  LOGIN_FAIL_SLEEP_MS: 500,             // throttle on every failed attempt
 };
+
+/* Google Chat webhook: lockouts, successful sign-ins, and kit/cart
+   submissions are posted here. Deliberately NOT hardcoded in CFG above —
+   this file is committed to a public repo, and a webhook URL is a bearer
+   credential (anyone holding it can post into the space). Set it once via
+   Project Settings (gear icon) > Script Properties > add "WEBHOOK_URL", or
+   run setWebhookUrl() below with the value filled in, then clear it from
+   the source before saving. Leave unset to disable notifications. */
+function webhookUrl_() {
+  try { return PropertiesService.getScriptProperties().getProperty('WEBHOOK_URL') || ''; }
+  catch (err) { return ''; }
+}
+
+/* One-off: paste the webhook URL below, run this once from the Run
+   dropdown, then delete the URL from this function (it only needs to run
+   once — the value persists in Script Properties, not in source).
+   NOTE: no trailing underscore on this name on purpose — Apps Script hides
+   any function ending in "_" from the Run dropdown's function picker, so a
+   name like setWebhookUrl_ would never appear there to run. */
+function setWebhookUrl() {
+  var url = ''; // <-- paste the Google Chat webhook URL here, run once, then remove it
+  if (!url) throw new Error('setWebhookUrl: paste the webhook URL into this function before running it');
+  PropertiesService.getScriptProperties().setProperty('WEBHOOK_URL', url);
+  Logger.log('WEBHOOK_URL saved to Script Properties.');
+}
 
 /* Header-name -> column finder (tolerant: trims, lowercases, ignores spaces).
    Falls back to a prefix match when nothing matches exactly, so a header cell
@@ -208,139 +238,232 @@ function jsonOut_(obj, cb) {
 }
 
 /* ------------------------------------------------------------------
-   Deloitte-only login gate: Google OAuth (domain check) + email OTP.
-   Two round trips from the client (see login.html):
-     1. auth_google      { id_token } -> verifies the Google ID token
-                          server-side, checks it's a CFG.ALLOWED_DOMAIN
-                          address, emails a 6-digit code.
-     2. auth_verify_otp  { email, otp } -> checks the code, on success
-                          mints an opaque session token good for
-                          CFG.SESSION_TTL_SECS.
-   Every other endpoint (fn=catalog, fn=kit_request) then requires that
-   session token, so the gate is enforced here, not just by the page
-   redirecting an unauthenticated visitor to login.html.
+   Deloitte-only login gate: username + password against the "Login" tab.
+   No signup, no self-service reset — an ASM manages rows directly in the
+   sheet. One round trip from the client (see login.html):
+     fn=login  { username, password } -> looked up in the Login tab,
+                hash compared in constant time, on success mints an opaque
+                session token good for CFG.SESSION_TTL_SECS.
+   Every other Deloitte endpoint (fn=catalog, fn=kit_request) then
+   requires that session token, so the gate is enforced here, not just by
+   the page redirecting an unauthenticated visitor to login.html. The
+   browser never sees the Login tab or any hash — only this script reads
+   it, via SpreadsheetApp on the server.
    ------------------------------------------------------------------ */
 
-function verifyGoogleIdToken_(idToken) {
-  if (!idToken) return { ok: false, error: 'missing id_token' };
-  var res;
+var LOGIN_GENERIC_ERROR = 'Invalid username or password';
+
+/* Header-name -> column finder for a specific tab: exact match only
+   (trimmed, lowercased, spaces/underscores collapsed) so a typo in the
+   sheet fails loudly instead of silently reading the wrong column. */
+function colOf_(header, name, tabName) {
+  var norm = function (s) { return String(s).toLowerCase().trim().replace(/[\s_]+/g, ' '); };
+  var target = norm(name);
+  for (var i = 0; i < header.length; i++) {
+    if (norm(header[i]) === target) return i;
+  }
+  throw new Error('colOf_: missing column "' + name + '" in tab "' + tabName +
+    '". Headers present: ' + header.map(String).join(', '));
+}
+
+function getLoginSheet_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName(CFG.LOGIN_SHEET);
+  if (!sh) throw new Error('getLoginSheet_: no "' + CFG.LOGIN_SHEET + '" tab found');
+  return sh;
+}
+
+function loginCols_(header) {
+  return {
+    username: colOf_(header, 'username', CFG.LOGIN_SHEET),
+    password: colOf_(header, 'password', CFG.LOGIN_SHEET),
+    hash: colOf_(header, 'password_hash', CFG.LOGIN_SHEET),
+    salt: colOf_(header, 'salt', CFG.LOGIN_SHEET),
+    active: colOf_(header, 'active', CFG.LOGIN_SHEET),
+    name: colOf_(header, 'name', CFG.LOGIN_SHEET),
+    email: colOf_(header, 'email', CFG.LOGIN_SHEET),
+    company: colOf_(header, 'company', CFG.LOGIN_SHEET),
+    lastLogin: colOf_(header, 'last_login', CFG.LOGIN_SHEET),
+    notes: colOf_(header, 'notes', CFG.LOGIN_SHEET),
+  };
+}
+
+function sha256Hex_(s) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s, Utilities.Charset.UTF_8);
+  return bytes.map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
+}
+
+/* Same-length XOR accumulation so a wrong guess takes the same time
+   whether it differs in the first byte or the last. */
+function constantTimeEq_(a, b) {
+  a = String(a || ''); b = String(b || '');
+  if (!a.length || !b.length) return false;
+  var len = Math.max(a.length, b.length);
+  var diff = a.length ^ b.length;
+  for (var i = 0; i < len; i++) {
+    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  }
+  return diff === 0;
+}
+
+/* Menu item "Client Access > Hash new passwords" (see onOpen). Reads any
+   row with a plain password and no hash yet, generates a random salt,
+   stores SHA-256(salt + password), writes the salt, then clears the
+   plain password cell so it never sits in the sheet in the clear. Safe
+   to re-run: a row with a hash already is left untouched. */
+function hashPendingPasswords() {
+  var sh = getLoginSheet_();
+  var vals = sh.getDataRange().getValues();
+  if (vals.length < 2) return 'hashPendingPasswords: no rows to hash';
+  var ci = loginCols_(vals[0]);
+  var updated = 0;
+  for (var r = 1; r < vals.length; r++) {
+    var row = vals[r];
+    var plain = String(row[ci.password] || '').trim();
+    var hash = String(row[ci.hash] || '').trim();
+    if (!plain || hash) continue;
+    var salt = Utilities.getUuid();
+    sh.getRange(r + 1, ci.hash + 1).setValue(sha256Hex_(salt + plain));
+    sh.getRange(r + 1, ci.salt + 1).setValue(salt);
+    sh.getRange(r + 1, ci.password + 1).setValue('');
+    updated++;
+  }
+  var msg = 'hashPendingPasswords: hashed ' + updated + ' password(s)';
+  Logger.log(msg);
+  try { SpreadsheetApp.getActive().toast(msg, 'Client Access'); } catch (err) {}
+  return msg;
+}
+
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('Client Access')
+    .addItem('Hash new passwords', 'hashPendingPasswords')
+    .addToUi();
+}
+
+function findLoginRow_(username) {
+  var sh = getLoginSheet_();
+  var vals = sh.getDataRange().getValues();
+  if (vals.length < 2) return null;
+  var ci = loginCols_(vals[0]);
+  var target = String(username || '').toLowerCase().trim();
+  for (var r = 1; r < vals.length; r++) {
+    if (String(vals[r][ci.username] || '').toLowerCase().trim() === target) {
+      return { rowIndex: r + 1, row: vals[r], ci: ci, sheet: sh };
+    }
+  }
+  return null;
+}
+
+function isLockedOut_(username) {
+  return !!CacheService.getScriptCache().get('lock_' + username);
+}
+
+function recordLoginFailure_(username) {
+  var cache = CacheService.getScriptCache();
+  var key = 'fail_' + username;
+  var n = Number(cache.get(key) || '0') + 1;
+  if (n >= CFG.LOGIN_MAX_ATTEMPTS) {
+    cache.put('lock_' + username, '1', CFG.LOGIN_LOCKOUT_SECS);
+    cache.remove(key);
+    notifyWebhook_('🔒 *' + username + '* locked out for ' +
+      Math.round(CFG.LOGIN_LOCKOUT_SECS / 60) + ' minutes after ' + n + ' failed sign-in attempts.');
+  } else {
+    cache.put(key, String(n), CFG.LOGIN_LOCKOUT_SECS);
+  }
+}
+
+function clearLoginFailures_(username) {
+  CacheService.getScriptCache().remove('fail_' + username);
+}
+
+/* Never throws — a broken webhook must never break login or checkout. */
+function notifyWebhook_(text) {
+  var url = webhookUrl_();
+  if (!url) return;
   try {
-    res = UrlFetchApp.fetch(
-      'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
-      { muteHttpExceptions: true }
-    );
+    UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      muteHttpExceptions: true,
+      payload: JSON.stringify({ text: text }),
+    });
   } catch (err) {
-    return { ok: false, error: 'could not reach Google' };
+    Logger.log('notifyWebhook_ failed: ' + err);
   }
-  if (res.getResponseCode() !== 200) return { ok: false, error: 'invalid or expired Google token' };
-  var payload;
-  try { payload = JSON.parse(res.getContentText()); } catch (err) { return { ok: false, error: 'bad token response' }; }
-
-  if (!CFG.GOOGLE_CLIENT_ID || payload.aud !== CFG.GOOGLE_CLIENT_ID) return { ok: false, error: 'token not issued for this app' };
-  if (String(payload.email_verified) !== 'true') return { ok: false, error: 'Google email is not verified' };
-
-  var email = String(payload.email || '').toLowerCase();
-  var domainOk = (payload.hd && payload.hd.toLowerCase() === CFG.ALLOWED_DOMAIN) ||
-    email.slice(email.indexOf('@') + 1) === CFG.ALLOWED_DOMAIN;
-  if (!domainOk) return { ok: false, error: 'Only @' + CFG.ALLOWED_DOMAIN + ' accounts can sign in' };
-
-  return { ok: true, email: email };
-}
-
-function isAllowedEmail_(email) {
-  email = String(email || '').toLowerCase();
-  return new RegExp('@' + CFG.ALLOWED_DOMAIN.replace(/\./g, '\\.') + '$', 'i').test(email);
-}
-
-function sendOtp_(email) {
-  var cache = CacheService.getScriptCache();
-  var metaKey = 'otpmeta_' + email;
-  var meta = {};
-  try { meta = JSON.parse(cache.get(metaKey) || '{}'); } catch (err) {}
-  var now = Date.now();
-  if (meta.last && now - meta.last < CFG.OTP_RESEND_COOLDOWN_SECS * 1000) {
-    return { ok: false, error: 'Please wait before requesting another code.' };
-  }
-  var hourAgo = now - 60 * 60 * 1000;
-  var sends = (meta.sends || []).filter(function (t) { return t > hourAgo; });
-  if (sends.length >= CFG.OTP_MAX_SENDS_PER_HOUR) {
-    return { ok: false, error: 'Too many codes requested. Try again later.' };
-  }
-
-  var otp = ('' + Math.floor(100000 + Math.random() * 900000));
-  var record = { code: otp, attempts: 0, exp: now + CFG.OTP_TTL_SECS * 1000 };
-  cache.put('otp_' + email, JSON.stringify(record), CFG.OTP_TTL_SECS);
-
-  sends.push(now);
-  cache.put(metaKey, JSON.stringify({ last: now, sends: sends }), 60 * 60);
-
-  MailApp.sendEmail({
-    to: email,
-    subject: 'Your Deloitte B2B store verification code',
-    body: 'Your verification code is ' + otp + '. It expires in ' +
-      Math.round(CFG.OTP_TTL_SECS / 60) + ' minutes. If you did not request this, you can ignore this email.',
-  });
-  return { ok: true };
-}
-
-function verifyOtp_(email, otp) {
-  email = String(email || '').toLowerCase();
-  var cache = CacheService.getScriptCache();
-  var key = 'otp_' + email;
-  var raw = cache.get(key);
-  if (!raw) return { ok: false, error: 'Code expired or not found. Request a new one.' };
-  var record;
-  try { record = JSON.parse(raw); } catch (err) { return { ok: false, error: 'Code expired or not found. Request a new one.' }; }
-
-  if (Date.now() > record.exp) { cache.remove(key); return { ok: false, error: 'Code expired. Request a new one.' }; }
-  if (record.attempts >= CFG.OTP_MAX_ATTEMPTS) { cache.remove(key); return { ok: false, error: 'Too many incorrect attempts. Request a new code.' }; }
-
-  if (String(otp || '').trim() !== record.code) {
-    record.attempts++;
-    cache.put(key, JSON.stringify(record), CFG.OTP_TTL_SECS);
-    return { ok: false, error: 'Incorrect code.' };
-  }
-
-  cache.remove(key);
-  var token = Utilities.getUuid();
-  cache.put('sess_' + token, email, CFG.SESSION_TTL_SECS);
-  return { ok: true, token: token, email: email };
 }
 
 function requireSession_(token) {
   if (!token) return null;
-  return CacheService.getScriptCache().get('sess_' + token) || null;
+  var raw = CacheService.getScriptCache().get('sess_' + token);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (err) { return null; }
 }
 
-function handleAuthGoogle_(body) {
-  var v = verifyGoogleIdToken_(body.id_token);
-  if (!v.ok) return jsonOut_({ ok: false, error: v.error });
-  var sent = sendOtp_(v.email);
-  if (!sent.ok) return jsonOut_({ ok: false, error: sent.error });
-  return jsonOut_({ ok: true, email: v.email });
+function handleLogin_(body) {
+  var username = String(body.username || '').trim();
+  var password = String(body.password || '').trim();
+  var usernameKey = username.toLowerCase();
+
+  if (!username || !password) {
+    Utilities.sleep(CFG.LOGIN_FAIL_SLEEP_MS);
+    return jsonOut_({ ok: false, error: LOGIN_GENERIC_ERROR });
+  }
+
+  if (isLockedOut_(usernameKey)) {
+    Utilities.sleep(CFG.LOGIN_FAIL_SLEEP_MS);
+    return jsonOut_({ ok: false, error: LOGIN_GENERIC_ERROR });
+  }
+
+  var rec;
+  try {
+    rec = findLoginRow_(username);
+  } catch (err) {
+    Logger.log('handleLogin_: ' + err);
+    return jsonOut_({ ok: false, error: 'Sign-in is temporarily unavailable.' });
+  }
+
+  var okPass = false;
+  if (rec) {
+    var active = /^\s*(true|yes|1)\s*$/i.test(String(rec.row[rec.ci.active] || ''));
+    var storedHash = String(rec.row[rec.ci.hash] || '').trim();
+    var salt = String(rec.row[rec.ci.salt] || '').trim();
+    if (active && storedHash) {
+      okPass = constantTimeEq_(sha256Hex_(salt + password), storedHash);
+    }
+  }
+
+  if (!rec || !okPass) {
+    recordLoginFailure_(usernameKey);
+    Utilities.sleep(CFG.LOGIN_FAIL_SLEEP_MS);
+    return jsonOut_({ ok: false, error: LOGIN_GENERIC_ERROR });
+  }
+
+  clearLoginFailures_(usernameKey);
+  var name = String(rec.row[rec.ci.name] || '').trim() || username;
+  var email = String(rec.row[rec.ci.email] || '').trim();
+  var token = Utilities.getUuid();
+  var expires = Date.now() + CFG.SESSION_TTL_SECS * 1000;
+  CacheService.getScriptCache().put('sess_' + token,
+    JSON.stringify({ username: usernameKey, name: name, email: email }),
+    CFG.SESSION_TTL_SECS);
+
+  try { rec.sheet.getRange(rec.rowIndex, rec.ci.lastLogin + 1).setValue(new Date()); } catch (err) {}
+  notifyWebhook_('✅ *' + name + '* (' + usernameKey + ') signed in to the Deloitte store.');
+
+  return jsonOut_({ ok: true, token: token, name: name, expires: expires });
 }
 
-function handleAuthResendOtp_(body) {
-  var email = String(body.email || '').toLowerCase();
-  if (!isAllowedEmail_(email)) return jsonOut_({ ok: false, error: 'unauthorized' });
-  var sent = sendOtp_(email);
-  if (!sent.ok) return jsonOut_({ ok: false, error: sent.error });
+function handleLogout_(body) {
+  if (body.session) CacheService.getScriptCache().remove('sess_' + body.session);
   return jsonOut_({ ok: true });
-}
-
-function handleAuthVerifyOtp_(body) {
-  var v = verifyOtp_(body.email, body.otp);
-  if (!v.ok) return jsonOut_({ ok: false, error: v.error });
-  return jsonOut_({ ok: true, token: v.token, email: v.email });
 }
 
 function doGet(e) {
   var p = (e && e.parameter) || {};
   if (CFG.TOKEN && p.token !== CFG.TOKEN) return jsonOut_({ error: 'unauthorized' }, p.callback);
-  if (CFG.REQUIRE_LOGIN && !requireSession_(p.session)) {
+  var brand = normalizeBrand_(p.brand);
+  if (brand === 'Deloitte' && CFG.REQUIRE_LOGIN && !requireSession_(p.session)) {
     return jsonOut_({ error: 'unauthorized' }, p.callback);
   }
-  var brand = normalizeBrand_(p.brand);
   var cache = CacheService.getScriptCache();
   var key = 'catalog_' + brand;
   var hit = cache.get(key);
@@ -350,19 +473,27 @@ function doGet(e) {
   return jsonOut_(data, p.callback);
 }
 
-function handleKitRequest_(body) {
+function handleKitRequest_(body, session) {
   var brand = normalizeBrand_(body.brand);   // 'Optum' or 'Deloitte', from the site that submitted
-  var tabName = brand + ' Kit Requests';     // per-brand tab, created on demand
+  // Deloitte cart/kit submissions land in the "Cart Enquiries" tab next to
+  // "Login" in the shared sheet; Optum keeps its own per-brand tab.
+  var tabName = brand === 'Deloitte' ? CFG.CART_SHEET : (brand + ' Kit Requests');
   var ss = SpreadsheetApp.getActive();
   var sh = ss.getSheetByName(tabName);
   if (!sh) {
     sh = ss.insertSheet(tabName);
-    sh.appendRow(['Timestamp', 'Brand', 'Name', 'Work email', 'Notes / deadline', 'Items (summary)', 'Total qty', 'Items (JSON)']);
+    sh.appendRow(['Timestamp', 'Brand', 'Username', 'Name', 'Work email', 'Notes / deadline', 'Items (summary)', 'Total qty', 'Items (JSON)']);
   }
+  // Requester identity comes from the session, never from the posted body,
+  // so a forged name/username in the request payload cannot land in the sheet.
+  var username = session ? session.username : '';
+  var name = session ? session.name : (body.name || '');
   var items = body.items || [];
   var summary = items.map(function (it) { return it.qty + ' x ' + it.name + (it.sku ? ' [' + it.sku + ']' : ''); }).join('; ');
   var totalQty = items.reduce(function (s, it) { return s + (Number(it.qty) || 0); }, 0);
-  sh.appendRow([new Date(), brand, body.name || '', body.email || '', body.notes || '', summary, totalQty, JSON.stringify(items)]);
+  sh.appendRow([new Date(), brand, username, name, body.email || '', body.notes || '', summary, totalQty, JSON.stringify(items)]);
+  notifyWebhook_('📦 *' + (name || username || 'A visitor') + '* submitted a request: ' +
+    totalQty + ' item(s) — ' + summary);
   return jsonOut_({ ok: true });
 }
 
@@ -372,12 +503,13 @@ function doPost(e) {
   if (CFG.TOKEN && body.token !== CFG.TOKEN) return jsonOut_({ ok: false, error: 'unauthorized' });
 
   switch (body.fn) {
-    case 'auth_google': return handleAuthGoogle_(body);
-    case 'auth_resend_otp': return handleAuthResendOtp_(body);
-    case 'auth_verify_otp': return handleAuthVerifyOtp_(body);
+    case 'login': return handleLogin_(body);
+    case 'logout': return handleLogout_(body);
     case 'kit_request':
-      if (CFG.REQUIRE_LOGIN && !requireSession_(body.session)) return jsonOut_({ ok: false, error: 'unauthorized' });
-      return handleKitRequest_(body);
+      var brand = normalizeBrand_(body.brand);
+      var session = requireSession_(body.session);
+      if (brand === 'Deloitte' && CFG.REQUIRE_LOGIN && !session) return jsonOut_({ ok: false, error: 'unauthorized' });
+      return handleKitRequest_(body, session);
     default:
       return jsonOut_({ ok: false, error: 'unknown fn' });
   }
@@ -441,4 +573,88 @@ function migrateImageUrlsToDrive() {
     ', no MATCHED review row for ' + noMatch.length + ' products';
   Logger.log(summary);
   return summary;
+}
+
+/* Dry-run twin: logs what migrateImageUrlsToDrive() would change without
+   writing anything. Run this first when re-running the migration. */
+function migrateImageUrlsToDrive_dryRun() {
+  var ss = SpreadsheetApp.getActive();
+  var reviewSh = ss.getSheetByName(IMAGE_REVIEW_SHEET);
+  if (!reviewSh) throw new Error('migrateImageUrlsToDrive_dryRun: no "' + IMAGE_REVIEW_SHEET + '" tab found');
+  var reviewVals = reviewSh.getDataRange().getValues();
+  var reviewC = colMap_(reviewVals[0]);
+  var rci = { status: reviewC('status'), sr: reviewC('srno'), url: reviewC('newurl') };
+  var manifest = {};
+  for (var i = 1; i < reviewVals.length; i++) {
+    var row = reviewVals[i];
+    if (String(row[rci.status] || '').trim().toUpperCase() !== 'MATCHED') continue;
+    var sr = String(row[rci.sr] || '').replace(/[^0-9]/g, '');
+    if (sr) manifest[sr] = String(row[rci.url] || '').trim();
+  }
+  var sh = ss.getSheetByName(CFG.CATALOG_SHEET) || ss.getSheets()[0];
+  var vals = sh.getDataRange().getValues();
+  var C = colMap_(vals[0]);
+  var ci = { sr: C('sr no'), img: C('image url') };
+  var wouldUpdate = 0;
+  for (var r = 1; r < vals.length; r++) {
+    var catSr = String(vals[r][ci.sr] || '').replace(/[^0-9]/g, '');
+    var newUrl = catSr && manifest[catSr];
+    if (newUrl && newUrl !== String(vals[r][ci.img] || '').trim()) wouldUpdate++;
+  }
+  var summary = 'migrateImageUrlsToDrive_dryRun: would update ' + wouldUpdate + ' row(s)';
+  Logger.log(summary);
+  return summary;
+}
+
+/* Dry-run twin: reports which Login rows have a plain password waiting to
+   be hashed, without writing anything. */
+function hashPendingPasswords_dryRun() {
+  var sh = getLoginSheet_();
+  var vals = sh.getDataRange().getValues();
+  if (vals.length < 2) return 'hashPendingPasswords_dryRun: no rows';
+  var ci = loginCols_(vals[0]);
+  var pending = [];
+  for (var r = 1; r < vals.length; r++) {
+    var plain = String(vals[r][ci.password] || '').trim();
+    var hash = String(vals[r][ci.hash] || '').trim();
+    if (plain && !hash) pending.push(String(vals[r][ci.username] || '(row ' + (r + 1) + ')'));
+  }
+  var summary = 'hashPendingPasswords_dryRun: would hash ' + pending.length + ' password(s): ' + pending.join(', ');
+  Logger.log(summary);
+  return summary;
+}
+
+/* ------------------------------------------------------------------
+   Zero-argument wrappers for testing from the Apps Script editor's Run
+   dropdown. doGet/doPost only accept a request object, which the editor
+   cannot supply, so these build a fake one against test data. None of
+   these touch the real Login tab's live sessions/lockout state beyond
+   what a normal call would.
+   ------------------------------------------------------------------ */
+
+function runTestLogin() {
+  var res = handleLogin_({ username: 'testuser', password: 'wrong-password-for-manual-testing' });
+  Logger.log(res.getContent());
+  return res.getContent();
+}
+
+function runTestCatalogDeloitte() {
+  var res = doGet({ parameter: { fn: 'catalog', brand: 'Deloitte', session: 'not-a-real-session' } });
+  Logger.log(res.getContent());
+  return res.getContent();
+}
+
+function runTestCatalogOptum() {
+  var res = doGet({ parameter: { fn: 'catalog', brand: 'Optum' } });
+  Logger.log(res.getContent());
+  return res.getContent();
+}
+
+function runTestKitRequest() {
+  var res = doPost({ postData: { contents: JSON.stringify({
+    fn: 'kit_request', brand: 'Deloitte', session: 'not-a-real-session',
+    items: [{ sku: 'CS0001', name: 'Test Product', qty: 20 }],
+  }) } });
+  Logger.log(res.getContent());
+  return res.getContent();
 }

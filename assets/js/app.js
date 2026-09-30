@@ -1,21 +1,18 @@
 /* CompanyStore B2B Store - shared client logic.
-   Catalogue rendering is fully static (products.json). The Apps Script API is
-   only touched for login, reset, upload, submit, decide and close. */
+   This is a CLOSED catalogue: nothing about products or pricing is bundled
+   with the site. Every page loads the live feed from Code.gs, which itself
+   requires a valid session token (see the "Deloitte-only login gate" in
+   Code.gs) before it returns anything. */
 
 const CONFIG = {
   // Apps Script Web App /exec URL (apps-script-feed/Code.gs). Same URL serves
-  // the live catalogue (GET ?fn=catalog) and receives cart submissions (POST).
-  // Empty until deployed: the site then loads the bundled snapshot below and
-  // shows a friendly notice if someone submits a request.
+  // the live catalogue (GET ?fn=catalog) and receives login/logout/cart
+  // submissions (POST).
   FEED_URL: 'https://script.google.com/macros/s/AKfycbzNmMUxZWR7TtSGZYY0QS4Ld0oJ2QCs-OYB6cmOmBdHftrnZQdQkebt3ww-pbe11_BShA/exec',
   API_URL: 'https://script.google.com/macros/s/AKfycbzNmMUxZWR7TtSGZYY0QS4Ld0oJ2QCs-OYB6cmOmBdHftrnZQdQkebt3ww-pbe11_BShA/exec',
   API_TOKEN: '',
   CURRENCY: '₹',
   BRAND: 'Deloitte',
-  // OAuth 2.0 Web application Client ID from Google Cloud Console, scoped to
-  // this site's origin. Used by login.html; the actual @deloitte.com domain
-  // check happens server-side in Code.gs, never trust the client for that.
-  GOOGLE_CLIENT_ID: '',
 };
 if (CONFIG.FEED_URL && !CONFIG.API_URL) CONFIG.API_URL = CONFIG.FEED_URL;
 
@@ -362,10 +359,10 @@ function imgAt(url, w) {
   return url;
 }
 
-/* Live catalogue from the Apps Script feed when configured, else the bundled
-   snapshot. The feed returns ONLY public columns (no cost/margins); the master
-   sheet stays private. A slow/failed feed falls back to the snapshot so the
-   store always renders. */
+/* Live catalogue from the Apps Script feed — there is no bundled snapshot.
+   The feed returns ONLY public columns (no cost/margins) and ONLY to a
+   caller with a valid session token; an unreachable or unauthorized feed
+   shows an error, never stale or public data. */
 /* Apps Script web apps block cross-origin fetch() (CORS), so the live feed is
    loaded via JSONP (a <script> tag calling back a global) — Code.gs returns
    `callback(json)` when ?callback= is present. No CORS, no redeploy. */
@@ -407,23 +404,61 @@ function refreshFeedCache() {
 async function loadCatalogueJSON() {
   let base = null;
   try { const c = sessionStorage.getItem('cs_feed'); if (c) base = JSON.parse(c); } catch (e) {}
-  if (!base || !Array.isArray(base.products) || !base.products.length) {
-    base = await fetch('assets/products.json').then(r => r.json());
+  if (base && Array.isArray(base.products) && base.products.length) {
+    refreshFeedCache();   // background, non-blocking — updates the cache for the next page
+    return base;
   }
-  refreshFeedCache();   // background, non-blocking — updates the cache for the next page
-  return base;
+
+  // Nothing cached yet this session (first page load) — block on the live
+  // feed. There is no local fallback: a visitor never sees product data
+  // that did not just come from an authenticated call to Code.gs.
+  let fresh;
+  try {
+    fresh = await jsonp(feedUrl(), 12000);
+  } catch (err) {
+    throw new Error('Unable to load catalogue, please retry');
+  }
+  if (fresh && fresh.error === 'unauthorized') {
+    Auth.clear();
+    location.href = 'login.html?expired=1';
+    return new Promise(() => {}); // navigating away; never resolve
+  }
+  if (!fresh || !Array.isArray(fresh.products) || !fresh.products.length) {
+    throw new Error('Unable to load catalogue, please retry');
+  }
+  try { sessionStorage.setItem('cs_feed', JSON.stringify(fresh)); } catch (e) {}
+  return fresh;
+}
+
+/* Shown in place of the page body when the catalogue cannot be loaded —
+   never a stale/local fallback, per the closed-catalog requirement. */
+function renderCatalogueError(err) {
+  document.body.innerHTML = '';
+  document.body.appendChild(el('main', {},
+    el('div', { class: 'wrap', style: 'max-width:420px;padding-top:80px;text-align:center' },
+      el('div', { class: 'card', style: 'padding:28px 24px' },
+        el('h1', { style: 'font-size:1.1rem;margin:0 0 8px' }, 'Unable to load catalogue, please retry'),
+        el('p', { class: 'small muted', style: 'margin:0 0 18px' },
+          (err && err.message) || 'The store could not reach the catalogue feed.'),
+        el('button', { class: 'btn btn-block', onclick: () => location.reload() }, 'Retry')))));
 }
 
 const Catalog = {
   _data: null,
   async load() {
     if (this._data) return this._data;
-    const [raw, cw, tax] = await Promise.all([
-      loadCatalogueJSON(),
-      fetch('assets/colorways.json').then(r => r.ok ? r.json() : { groups: [] }).catch(() => ({ groups: [] })),
-      fetch('assets/taxonomy.json').then(r => r.ok ? r.json() : {}).catch(() => ({})),
-      Site.load(),
-    ]);
+    let raw, cw, tax;
+    try {
+      [raw, cw, tax] = await Promise.all([
+        loadCatalogueJSON(),
+        fetch('assets/colorways.json').then(r => r.ok ? r.json() : { groups: [] }).catch(() => ({ groups: [] })),
+        fetch('assets/taxonomy.json').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+        Site.load(),
+      ]);
+    } catch (err) {
+      renderCatalogueError(err);
+      throw err;
+    }
     this._data = regroupCatalogue(raw, tax);
     for (const p of this._data.products) if (!p.image) p.image = PLACEHOLDER_IMG;
     /* bySku indexes EVERY product, including colours hidden from listings,
@@ -442,7 +477,8 @@ const Catalog = {
   eventKit(slug) { return this.eventKits.find(k => k.slug === slug); },
 };
 
-/* Banners and site settings, published alongside products.json. Absent on a
+/* Banners and site settings — non-sensitive, no prices, safe to publish as a
+   static file. Absent on a
    store that has never published, so every read is defensive. */
 const Site = {
   settings: {}, banners: [], departments: [],
@@ -491,8 +527,16 @@ const Auth = {
     return false;
   },
   logout() {
+    const token = this.token();
     this.clear();
-    try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
+    if (token && CONFIG.API_URL) {
+      // Fire-and-forget: invalidate the token server-side, but the browser
+      // clears its own session regardless of whether this reaches Code.gs.
+      fetch(CONFIG.API_URL, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ fn: 'logout', session: token }),
+      }).catch(() => {});
+    }
     location.href = 'login.html';
   },
 };
@@ -950,8 +994,10 @@ function header(active) {
           placeholder: 'Search products…' }),
         el('button', { type: 'submit', 'aria-label': 'Search', html: ICONS.search })),
       el('div', { class: 'head-icons' },
+        u ? el('span', { class: 'small', style: 'font-size:12px;margin-right:8px;color:var(--muted,#666)' },
+          'Hi, ' + (u.name || u.username)) : null,
         u ? el('button', {
-          class: 'link-quiet', type: 'button', title: 'Signed in as ' + u.email,
+          class: 'link-quiet', type: 'button', title: 'Sign out',
           style: 'font-size:12px;background:none;border:none;cursor:pointer',
           onclick: () => Auth.logout(),
         }, 'Sign out') : null,
@@ -1032,7 +1078,7 @@ function openMenu(active) {
 
     el('div', { class: 'menu-body' },
       u ? el('div', { class: 'menu-group' },
-        el('div', { class: 'small', style: 'padding:6px 4px;color:var(--muted,#666)' }, 'Signed in as ' + u.email),
+        el('div', { class: 'small', style: 'padding:6px 4px;color:var(--muted,#666)' }, 'Hi, ' + (u.name || u.username)),
         el('a', { class: 'menu-cat', href: '#', onclick: e => { e.preventDefault(); Auth.logout(); } }, 'Sign out')) : null,
 
       cats.map(c => el('div', { class: 'menu-group' },
